@@ -29,6 +29,38 @@ Before using this semantic parser, make sure that all necessary libraries and de
 ````shell
 pip install -r requirements.txt
 ````
+
+## Usage :
+
+To prepare data from a given corpus, please run the following cell :
+````shell
+python ./src/run.py preprocess
+````
+
+
+Other arguments are available as represented below :
+
+````
+usage: run.py [-h] [--ftrain FTRAIN] [--fdev FDEV] [--ftest FTEST] [--save] [--load] [--preprocessed PREPROCESSED] [--display] {preprocess,train,predict}
+
+Graph-based biaffine semantic parser of French
+
+positional arguments:
+  {preprocess,train,predict}
+
+options:
+  -h, --help            show this help message and exit
+
+Data Options:
+  --ftrain FTRAIN       path to train corpus
+  --fdev FDEV           path to dev corpus
+  --ftest FTEST         path to test corpus
+  --save, -s            save preprocessed data
+  --load, -l            load preprocessed data
+  --preprocessed PREPROCESSED
+                        path to preprocessed data
+  --display, -d         display preprocessed data
+````
 ## TO DO
 
 ---
