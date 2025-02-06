@@ -23,8 +23,12 @@ The project is mainly developed using python, pytorch, transformers, and conllu 
 
 ---
 
----
+## Libraries and dependencies
+Before using this semantic parser, make sure that all necessary libraries and dependencies exist/installed by running the following command :
 
+````shell
+pip install -r requirements.txt
+````
 ## TO DO
 
 ---
