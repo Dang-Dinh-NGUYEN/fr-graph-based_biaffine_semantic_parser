@@ -1,44 +1,50 @@
 import argparse
 
-import config
-from prepare_data import prepare_data, load_preprocessed_data, save_preprocessed_data, display_preprocessed_data
+from prepare_data import *
+
+
+def preprocess_data(args):
+    """Handles data preprocessing mode"""
+    print(f"Preprocessing file; {args.input_file}")
+
+    if args.load is None:
+        word_vocab, tag_vocab, words, tags, governors = prepare_data(file_path=args.input_file,
+                                                                     update=args.update,
+                                                                     max_len=args.max_len)
+    else:
+        preprocessed_word_vocab, preprocessed_tag_vocab, _, _, _ = load_preprocessed_data(args.load)
+        word_vocab, tag_vocab, words, tags, governors = prepare_data(file_path=args.input_file,
+                                                                     word_vocab=preprocessed_word_vocab,
+                                                                     tag_vocab=preprocessed_tag_vocab,
+                                                                     update=args.update,
+                                                                     max_len=args.max_len)
+
+    if args.save:
+        directory, filename = os.path.split(args.input_file)
+        output_file = f"preprocessed_{filename}.pt"
+        output_file = os.path.join(directory, output_file)
+
+        save_preprocessed_data(word_vocab, tag_vocab, words, tags, governors, output_file)
+
+    if args.display:
+        display_preprocessed_data(word_vocab, tag_vocab, words, tags, governors)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Graph-based biaffine semantic parser of French")
 
-    parser.add_argument('mode', type=str, choices=['preprocess', 'train', 'predict'])
+    subparsers = parser.add_subparsers(dest="mode", required=True, help="Select mode: preprocess | train | predict")
 
-    # Data arguments
-    data = parser.add_argument_group('Data Options')
-    data.add_argument('--ftrain', type=str, default=config.SEQUOIA_SIMPLE_TRAIN, help='path to train corpus')
-    data.add_argument('--fdev', type=str, default=config.SEQUOIA_SIMPLE_DEV, help='path to dev corpus')
-    data.add_argument('--ftest', type=str, default=config.SEQUOIA_SIMPLE_TEST, help='path to test corpus')
-
-    data.add_argument('--save', '-s', action='store_true', help='save preprocessed data')
-
-    data.add_argument('--load', '-l', action='store_true', help='load preprocessed data')
-    data.add_argument('--preprocessed', type=str, default=None, help='path to preprocessed data')
-
-    data.add_argument('--display', '-d', action='store_true', help='display preprocessed data')
+    # --- Preprocessing Mode ---
+    preprocess_parser = subparsers.add_parser("preprocess", help="Preprocess data")
+    preprocess_parser.add_argument("input_file", type=str, help="path to input file")
+    preprocess_parser.add_argument("--load", '-l', type=str, help="path to preprocessed file")
+    preprocess_parser.add_argument('--update', '-u', action='store_true',
+                                   help='update vocabulary during preprocessing')
+    preprocess_parser.add_argument('--max_len', '-m', type=int, default=30, help='maximum sequence length (default=30)')
+    preprocess_parser.add_argument('--save', '-s', action='store_true', help='save preprocessed data')
+    preprocess_parser.add_argument('--display', '-d', action='store_true', help='display preprocessed data')
+    preprocess_parser.set_defaults(func=preprocess_data)
 
     args = parser.parse_args()
-
-    if args.mode == 'preprocess':
-        if not args.load:
-            word_vocab, tag_vocab, words, tags, governors = prepare_data(args.ftrain)
-
-        else:
-            if args.preprocessed is None:
-                parser.error("--load (-l) requires --preprocessed to specify the path of preprocessed data.")
-            word_vocab, tag_vocab, words, tags, governors = load_preprocessed_data(args.preprocessed)
-
-        if args.save:
-            if args.preprocessed is None:
-                parser.error("--save (-s) requires --preprocessed to specify the output path.")
-
-            save_preprocessed_data(word_vocab, tag_vocab, words, tags, governors, args.preprocessed)
-
-        if args.display:
-            display_preprocessed_data(word_vocab, tag_vocab, words, tags, governors)
-
-
+    args.func(args)
