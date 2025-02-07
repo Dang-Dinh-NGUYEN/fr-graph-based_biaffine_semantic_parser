@@ -32,35 +32,40 @@ pip install -r requirements.txt
 
 ## Usage :
 
-To prepare data from a given corpus, please run the following cell :
+### Data preprocessing
+
+To prepare data from a given corpus, `./sequoia/src/sequoia-ud.parseme.frsemcor.simple.train` for example, and save
+the output, run the following cell :
+
 ````shell
-python ./src/run.py preprocess
+python ./src/run.py preprocess ./sequoia/src/sequoia-ud.parseme.frsemcor.simple.train -u -s
 ````
 
+Data can also be preprocessed with existing vocabularies. The following shell presents the preprocessing on 
+`./sequoia/src/sequoia-ud.parseme.frsemcor.simple.dev` with vocabularies extracted from the corpus `.train` : 
+
+````shell
+python ./src/run.py preprocess ./sequoia/src/sequoia-ud.parseme.frsemcor.simple.dev -l=./sequoia/src/sequoia-ud.parseme.frsemcor.simple.train -s
+````
 
 Other arguments are available as represented below :
 
 ````
-usage: run.py [-h] [--ftrain FTRAIN] [--fdev FDEV] [--ftest FTEST] [--save] [--load] [--preprocessed PREPROCESSED] [--display] {preprocess,train,predict}
-
-Graph-based biaffine semantic parser of French
+usage: run.py preprocess [-h] [--load LOAD] [--update] [--max_len MAX_LEN] [--save] [--display] input_file
 
 positional arguments:
-  {preprocess,train,predict}
+  input_file            path to input file
 
 options:
   -h, --help            show this help message and exit
-
-Data Options:
-  --ftrain FTRAIN       path to train corpus
-  --fdev FDEV           path to dev corpus
-  --ftest FTEST         path to test corpus
+  --load, -l LOAD       path to preprocessed file
+  --update, -u          update vocabulary during preprocessing
+  --max_len, -m MAX_LEN
+                        maximum sequence length (default=30)
   --save, -s            save preprocessed data
-  --load, -l            load preprocessed data
-  --preprocessed PREPROCESSED
-                        path to preprocessed data
   --display, -d         display preprocessed data
 ````
+
 ## TO DO
 
 ---

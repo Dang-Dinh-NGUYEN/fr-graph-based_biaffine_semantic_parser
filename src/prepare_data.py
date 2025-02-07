@@ -83,6 +83,7 @@ def load_preprocessed_data(preprocessed_data_path: str):
 
 
 def display_preprocessed_data(*args):
+    print(f"\nDisplaying preprocessed data")
     for value in args:
         print(f"Type: {type(value)}")
 
@@ -93,7 +94,7 @@ def display_preprocessed_data(*args):
             else:
                 print(", ".join([f"{key}: {val}" for key, val in value.items()]))
 
-        elif isinstance(value, (list)):
+        elif isinstance(value, list):
             print(f"Length: {len(value)}")
             print(value[:25] if len(value) > 100 else value)
 
