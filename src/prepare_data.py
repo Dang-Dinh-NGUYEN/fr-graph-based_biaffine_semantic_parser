@@ -2,6 +2,7 @@ import os
 import sys
 
 import torch
+from tqdm import tqdm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from lib import conllulib
@@ -31,7 +32,7 @@ def prepare_data(
 
         words, tags, governors = [], [], []
 
-        for tokenList in tokenLists:
+        for tokenList in tqdm(tokenLists, desc="Processing sentences", unit=" sent"):
             current_words, current_tags, current_governors = [], [], []
 
             for token in tokenList:
