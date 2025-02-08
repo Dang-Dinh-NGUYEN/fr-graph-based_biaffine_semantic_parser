@@ -1,25 +1,25 @@
 import argparse
 
-from prepare_data import *
+from preprocess_data import *
 from biaffine_parser import *
 from src.train_gbparser import Trainer
 
 
 def handle_preprocess(args):
     """Handles data preprocessing mode"""
-    print(f"Preprocessing file; {args.input_file}")
+    print(f"Preprocessing file : {args.input_file}")
 
     if args.load is None:
-        word_vocab, tag_vocab, words, tags, governors = prepare_data(file_path=args.input_file,
-                                                                     update=args.update,
-                                                                     max_len=args.max_len)
+        word_vocab, tag_vocab, words, tags, governors = preprocess_data(file_path=args.input_file,
+                                                                        update=args.update,
+                                                                        max_len=args.max_len)
     else:
         preprocessed_word_vocab, preprocessed_tag_vocab, _, _, _ = load_preprocessed_data(args.load)
-        word_vocab, tag_vocab, words, tags, governors = prepare_data(file_path=args.input_file,
-                                                                     word_vocab=preprocessed_word_vocab,
-                                                                     tag_vocab=preprocessed_tag_vocab,
-                                                                     update=args.update,
-                                                                     max_len=args.max_len)
+        word_vocab, tag_vocab, words, tags, governors = preprocess_data(file_path=args.input_file,
+                                                                        word_vocab=preprocessed_word_vocab,
+                                                                        tag_vocab=preprocessed_tag_vocab,
+                                                                        update=args.update,
+                                                                        max_len=args.max_len)
 
     if args.save:
         directory, filename = os.path.split(args.input_file)
@@ -34,28 +34,28 @@ def handle_preprocess(args):
 
 def handle_train(args):
     """Handles training mode"""
-    word_vocab_train, tag_vocab_train, words_train, tags_train, governors_train = prepare_data(file_path=args.ftrain)
+    word_vocab_train, tag_vocab_train, words_train, tags_train, governors_train = preprocess_data(file_path=args.ftrain,
+                                                                                                  max_len=50)
 
-    word_vocab_dev, tag_vocab_dev, words_dev, tags_dev, governors_dev = prepare_data(file_path=args.fdev,
-                                                                                     word_vocab=word_vocab_train,
-                                                                                     tag_vocab=tag_vocab_train,
-                                                                                     update=False)
+    word_vocab_dev, tag_vocab_dev, words_dev, tags_dev, governors_dev = preprocess_data(file_path=args.fdev,
+                                                                                        word_vocab=word_vocab_train,
+                                                                                        tag_vocab=tag_vocab_train,
+                                                                                        update=False, max_len=50)
 
     BiAffineParser = biaffine_parser(len(word_vocab_train), len(tag_vocab_train), args.d_w, args.d_t, args.d_h, args.d)
 
     optimizer = torch.optim.Adam(BiAffineParser.parameters(), lr=args.lr)
     loss_function = nn.CrossEntropyLoss()
 
-    trainer = Trainer(BiAffineParser, optimizer, loss_function, 32)
+    trainer = Trainer(BiAffineParser, optimizer, loss_function, 128)
     history = trainer.train(words_train, tags_train, governors_train, words_dev, tags_dev, governors_dev, args.n_epochs)
-
-
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Graph-based biaffine semantic parser of French")
 
     subparsers = parser.add_subparsers(dest="mode", required=True, help="Select mode: preprocess | train | predict")
+    parser.add_argument('--disable_cuda', action='store_true', help='disable CUDA')
 
     # --- Preprocessing Mode ---
     preprocess_parser = subparsers.add_parser("preprocess", help="Preprocess data")
@@ -90,4 +90,13 @@ if __name__ == '__main__':
     train_parser.set_defaults(func=handle_train)
 
     args = parser.parse_args()
+
+    if args.disable_cuda:
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    print(f"Using {device}")
+
     args.func(args)
+
