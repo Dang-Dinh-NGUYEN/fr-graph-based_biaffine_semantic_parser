@@ -1,5 +1,4 @@
 import os
-import pickle
 import sys
 
 import torch
@@ -46,12 +45,3 @@ class biaffine_parser(nn.Module):
         S += torch.matmul(H_arc_head, self.bias.unsqueeze(0).T)  # Adding bias term
 
         return S
-
-
-def save_model(model : biaffine_parser, optimizer, criterion, file_path: str):
-    parameters = {'model': model, 'optimizer': optimizer, 'criterion': criterion}
-
-    with open(file_path, 'wb') as f:
-        pickle.dump(parameters)
-
-    print(f"Model saved to {file_path}")

@@ -1,7 +1,11 @@
 import os
+import pickle
 import sys
 
+import torch
 from torch.utils.data import TensorDataset, DataLoader
+from tqdm import tqdm
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import config
 
@@ -9,12 +13,14 @@ import config
 class Trainer:
     """Encapsulates training and evaluation logic."""
 
-    def __init__(self, model, optimizer, criterion, batch_size):
+    def __init__(self, model, optimizer, criterion, batch_size, device=None):
         self.model = model
         self.optimizer = optimizer
         self.criterion = criterion
         self.batch_size = batch_size
         self.history = {"train_loss": [], "dev_loss": []}
+        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
 
     def train(self, words_train, tags_train, governors_train, words_dev, tags_dev, governors_dev, nb_epochs):
         train_dataset = TensorDataset(words_train, tags_train, governors_train)
@@ -36,17 +42,27 @@ class Trainer:
 
     def _run_epoch(self, dataloader, train):
         total_loss = 0
-        for batch in dataloader:
-            words, tags, governors = batch
 
-            self.optimizer.zero_grad()
-            output = self.model(words, tags)
-            loss = self._compute_loss(output, governors)
-            if train:
-                loss.backward()
-                self.optimizer.step()
+        # Use tqdm for progress tracking
+        with tqdm(dataloader, unit="batch") as pbar:
+            for batch in pbar:
+                words, tags, governors = batch
 
-            total_loss += loss.item()
+                words = words.to(self.device)
+                tags = tags.to(self.device)
+                governors = governors.to(self.device)
+
+                self.optimizer.zero_grad()
+                output = self.model(words, tags)
+                loss = self._compute_loss(output, governors)
+                if train:
+                    loss.backward()
+                    self.optimizer.step()
+
+                total_loss += loss.item()
+
+                # Update tqdm progress bar with the current loss
+                pbar.set_postfix(loss=loss.item())
 
         avg_loss = total_loss / len(dataloader)
         loss_key = "train_loss" if train else "dev_loss"
@@ -55,9 +71,41 @@ class Trainer:
         return avg_loss
 
     def _compute_loss(self, output, target):
-        output = output.view(-1, output.shape[-1])
-        print(output)
-        print(target)
+        """
+        Computes loss while handling padding.
+
+        output: (batch_size, seq_length, vocab_size) - Model predictions
+        target: (batch_size, seq_length) - Ground truth head indices
+        """
+        target = target.to(self.device)
+
+        batch_size, seq_length, vocab_size = output.shape
+
+        # Reshape output to (batch_size * seq_length, vocab_size)
+        output = output.view(-1, vocab_size)
+
+        # Reshape target to (batch_size * seq_length)
         target = target.view(-1)
+
+        # Apply mask to ignore PAD_TOKEN_VAL
         mask = target != config.PAD_TOKEN_VAL
-        return self.criterion(output[mask], target[mask])
+
+        valid_output = output[mask]
+        valid_target = target[mask]
+
+        return self.criterion(valid_output, valid_target)
+
+    def save_experiment(self, file_path: str):
+        parameters = {
+            'model': self.model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'criterion': self.criterion,
+            'histories': self.history,
+            'batch_size': self.batch_size,
+            'epochs': len(self.history['train_loss'])
+        }
+
+        with open(file_path, 'wb') as f:
+            pickle.dump(parameters)
+
+        print(f"Experiment saved to {file_path}")
