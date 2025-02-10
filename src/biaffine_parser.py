@@ -10,6 +10,14 @@ import config
 
 class biaffine_parser(nn.Module):
     def __init__(self, V_w, V_t, d_w, d_t, d_h, d):
+        """
+        :param V_w: word vocabulary size
+        :param V_t: tag vocabulary size
+        :param d_w: word embedding dimension
+        :param d_t: tag embedding dimension
+        :param d_h: hidden dimension
+        :param d: MLP hidden dimension
+        """
         super(biaffine_parser, self).__init__()
         self.word_embeddings = nn.Embedding(V_w, d_w, padding_idx=config.PAD_TOKEN_VAL)
         self.tag_embeddings = nn.Embedding(V_t, d_t, padding_idx=config.PAD_TOKEN_VAL)
