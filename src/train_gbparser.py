@@ -106,6 +106,6 @@ class Trainer:
         }
 
         with open(file_path, 'wb') as f:
-            pickle.dump(parameters)
+            pickle.dump(parameters, f)
 
         print(f"Experiment saved to {file_path}")
