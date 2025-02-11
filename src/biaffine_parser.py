@@ -1,15 +1,10 @@
-import os
-import sys
-
 import torch
 from torch import nn
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-import config
+import src.config as cf
 
 
 class biaffine_parser(nn.Module):
-    def __init__(self, V_w, V_t, d_w, d_t, d_h, d):
+    def __init__(self, V_w, V_t, d_w, d_t, d_h, d, dropout_rate=0.33):
         """
         :param V_w: word vocabulary size
         :param V_t: tag vocabulary size
@@ -19,13 +14,14 @@ class biaffine_parser(nn.Module):
         :param d: MLP hidden dimension
         """
         super(biaffine_parser, self).__init__()
-        self.word_embeddings = nn.Embedding(V_w, d_w, padding_idx=config.PAD_TOKEN_VAL)
-        self.tag_embeddings = nn.Embedding(V_t, d_t, padding_idx=config.PAD_TOKEN_VAL)
+        self.word_embeddings = nn.Embedding(V_w, d_w, padding_idx=cf.PAD_TOKEN_VAL)
+        self.tag_embeddings = nn.Embedding(V_t, d_t, padding_idx=cf.PAD_TOKEN_VAL)
+        self.dropout_rate = dropout_rate
 
-        self.rnn = nn.GRU(input_size=d_w + d_t, hidden_size=d_h, batch_first=True, bias=False, dropout=0.1, num_layers=2)
+        self.rnn = nn.GRU(input_size=d_w + d_t, hidden_size=d_h, batch_first=True, bias=False, dropout=self.dropout_rate, num_layers=2)
 
-        self.head_mlp = nn.Sequential(nn.Linear(d_h, d), nn.ReLU(), nn.Dropout(0.1))
-        self.dep_mlp = nn.Sequential(nn.Linear(d_h, d), nn.ReLU(), nn.Dropout(0.1))
+        self.head_mlp = nn.Sequential(nn.Linear(d_h, d), nn.ReLU(), nn.Dropout(self.dropout_rate))
+        self.dep_mlp = nn.Sequential(nn.Linear(d_h, d), nn.ReLU(), nn.Dropout(self.dropout_rate))
 
         self.W_arc = nn.Linear(d, d, bias=False)
 
@@ -37,7 +33,20 @@ class biaffine_parser(nn.Module):
         nn.init.xavier_uniform_(self.W_arc.weight)
         nn.init.zeros_(self.bias)
 
-    def forward(self, word_idx, tag_idx):
+    def dynamic_word_dropout(self, word_idx, training=False):
+        """Applies word dropout before embedding lookup"""
+        if training:  # Apply dropout only during training
+            rand_mask = torch.rand(word_idx.shape)
+            dropped_words = torch.where(rand_mask < self.dropout_rate,
+                                        torch.full_like(word_idx, cf.UNK_TOKEN_VAL),  # Replace with UNK_IDX
+                                        word_idx)
+            return dropped_words
+        return word_idx  # No dropout during inference
+
+    def forward(self, word_idx, tag_idx, training=False):
+        # Apply dynamic word dropout
+        word_idx = self.dynamic_word_dropout(word_idx, training)
+
         word_emb = self.word_embeddings(word_idx)
         tag_emb = self.tag_embeddings(tag_idx)
 

@@ -1,13 +1,7 @@
-import os
-import pickle
-import sys
-
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-import config
+import src.config as cf
 
 
 class Trainer:
@@ -53,7 +47,7 @@ class Trainer:
                 governors = governors.to(self.device)
 
                 self.optimizer.zero_grad()
-                output = self.model(words, tags)
+                output = self.model(words, tags, train)
                 loss = self._compute_loss(output, governors)
                 if train:
                     loss.backward()
@@ -88,24 +82,9 @@ class Trainer:
         target = target.view(-1)
 
         # Apply mask to ignore PAD_TOKEN_VAL
-        mask = target != config.PAD_TOKEN_VAL
+        mask = target != cf.PAD_TOKEN_VAL
 
         valid_output = output[mask]
         valid_target = target[mask]
 
         return self.criterion(valid_output, valid_target)
-
-    def save_experiment(self, file_path: str):
-        parameters = {
-            'model': self.model.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-            'criterion': self.criterion,
-            'histories': self.history,
-            'batch_size': self.batch_size,
-            'epochs': len(self.history['train_loss'])
-        }
-
-        with open(file_path, 'wb') as f:
-            pickle.dump(parameters, f)
-
-        print(f"Experiment saved to {file_path}")

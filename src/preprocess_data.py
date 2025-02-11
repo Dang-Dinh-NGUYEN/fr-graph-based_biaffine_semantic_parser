@@ -3,13 +3,11 @@ import sys
 
 import torch
 from tqdm import tqdm
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from lib import conllulib
-import config
+import src.config as cf
+import lib.conllulib
 
 
-def pad_tensor(batchs: list, max_len: int, padding_value: int = config.PAD_TOKEN_VAL, device=None) -> torch.Tensor:
+def pad_tensor(batchs: list, max_len: int, padding_value: int = cf.PAD_TOKEN_VAL, device=None) -> torch.Tensor:
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -24,8 +22,8 @@ def pad_tensor(batchs: list, max_len: int, padding_value: int = config.PAD_TOKEN
 
 def preprocess_data(
         file_path: str,
-        word_vocab: dict = config.WORD_VOCAB,
-        tag_vocab: dict = config.TAG_VOCAB,
+        word_vocab: dict = cf.WORD_VOCAB,
+        tag_vocab: dict = cf.TAG_VOCAB,
         update: bool = True,
         max_len: int = 50,
         device=None
@@ -34,7 +32,7 @@ def preprocess_data(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     with open(file_path, "r", encoding="UTF-8") as file:
-        tokenLists = conllulib.CoNLLUReader(file).readConllu()
+        tokenLists = lib.conllulib.CoNLLUReader(file).readConllu()
 
         words, tags, governors = [], [], []
 
@@ -64,8 +62,8 @@ def preprocess_data(
         return word_vocab, tag_vocab, words, tags, governors
 
 
-def save_preprocessed_data(word_vocab: dict, tag_vocab: dict, words: torch.Tensor, tags: torch.Tensor, governors: torch.Tensor,
-                           save_path: str):
+def save_preprocessed_data(word_vocab: dict, tag_vocab: dict, words: torch.Tensor, tags: torch.Tensor,
+                           governors: torch.Tensor, save_path: str):
     torch.save({
         'word_vocab': word_vocab,
         'tag_vocab': tag_vocab,
