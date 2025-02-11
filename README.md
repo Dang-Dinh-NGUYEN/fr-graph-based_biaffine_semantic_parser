@@ -24,7 +24,7 @@ The project is mainly developed using python, pytorch, transformers, and conllu 
 ---
 
 ## Libraries and dependencies
-Before using this semantic parser, make sure that all necessary libraries and dependencies exist/installed by running the following command :
+Before using this semantic parser, make sure that all necessary libraries and dependencies are installed by running the following command :
 
 ````shell
 pip install -r requirements.txt
@@ -38,17 +38,17 @@ To prepare data from a given corpus, `./sequoia/src/sequoia-ud.parseme.frsemcor.
 the output, run the following cell :
 
 ````shell
-python ./src/run.py preprocess ./sequoia/src/sequoia-ud.parseme.frsemcor.simple.train -u -s
+python ./src/run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.train -u -s
 ````
 
-Data can also be preprocessed with existing vocabularies. The following shell presents the preprocessing on 
-`./sequoia/src/sequoia-ud.parseme.frsemcor.simple.dev` with vocabularies extracted from the corpus `.train` : 
+Data can also be preprocessed with existing vocabularies. The following shell performs the preprocessing on 
+`./sequoia/sequoia-ud.parseme.frsemcor.simple.dev` with vocabularies extracted from the corpus `.train` : 
 
 ````shell
-python ./src/run.py preprocess ./sequoia/src/sequoia-ud.parseme.frsemcor.simple.dev -l=./sequoia/src/sequoia-ud.parseme.frsemcor.simple.train -s
+python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.dev -l=./sequoia/sequoia-ud.parseme.frsemcor.simple.train -s
 ````
 
-Other arguments are available as represented below :
+Other arguments are available as presented below :
 
 ````
 usage: run.py preprocess [-h] [--load LOAD] [--update] [--max_len MAX_LEN] [--save] [--display] input_file
@@ -66,6 +66,55 @@ options:
   --display, -d         display preprocessed data
 ````
 
+### Training model
+At the beginning, we define our model and train it with similar configurations/conditions as mentioned in the article of 
+Dozat and Manning [^biaffine]. 
+
+````shell
+python ./run.py train -s --output=./models/sample_model.pkl
+````
+Other arguments are presented as follows :
+````
+usage: run.py train [-h] [--ftrain FTRAIN] [--fdev FDEV] [--ltrain LTRAIN] [--ldev LDEV] [--d_w D_W] [--d_t D_T] [--d_h D_H] [--d D] [--dropout DROPOUT] [--n_epochs N_EPOCHS] [--batch_size BATCH_SIZE] [--lr LR] [--save]
+                    [--output OUTPUT]
+
+options:
+  -h, --help            show this help message and exit
+  --ftrain FTRAIN       path to train corpus
+  --fdev FDEV           path to dev corpus
+  --ltrain LTRAIN       path to preprocessed train file
+  --ldev LDEV           path to preprocessed dev file
+  --d_w D_W             dimension of word embeddings
+  --d_t D_T             dimension of tag embeddings
+  --d_h D_H             dimension of recurrent state
+  --d D                 dimension of head/dependent vector
+  --dropout DROPOUT     dropout rate
+  --n_epochs N_EPOCHS   number of training epochs
+  --batch_size BATCH_SIZE
+                        batch_size
+  --lr LR               learning rate
+  --save, -s            save trained model
+  --output, -o OUTPUT   path to save model
+````
+
+### Predict
+To predict a corpus using a trained model, run the following command :
+
+````shell
+python ./run.py predict sequoia/sequoia-ud.parseme.frsemcor.simple.test ./sequoia-ud.parseme.frsemcor.simple.test.pred.conllu ./models/sample_model.pkl  
+````
+
+### Evaluation
+Evaluate the predicted output with LAS/UAS :
+
+````shell
+python lib/accuracy.py --pred sequoia-ud.parseme.frsemcor.simple.dev.test.conllu --gold sequoia/sequoia-ud.parseme.frsemcor.simple.test --tagcolumn head 
+````
+
+## Version
+- version 1.0.0 : graph-based semantic parser using simple GRU and dynamic word dropout with similar configurations to which proposed by [^biaffine]. The model predicts head-governor dependencies only
+
+
 ## TO DO
 
 ---
@@ -76,3 +125,6 @@ options:
 - [ ] Hyper-parameter optimisation of the system on the development corpus
 - [ ] Evaluation on the test portion of the deep syntax annotation of the Sequoia corpus
   - [ ] In particular, implementing a script to evaluate the predictions
+
+## References
+[^biaffine] : Dozat et al. Stanford’s Graph-based Neural Dependency Parser at the CoNLL 2017 Shared Task. CoNLL 2017 Shared Task: Multilingual Parsing from Raw Text to Universal Dependencies, pages 20–30, Vancouver, Canada, August 3-4, 2017. 
