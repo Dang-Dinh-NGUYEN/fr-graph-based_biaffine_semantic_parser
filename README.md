@@ -38,7 +38,7 @@ To prepare data from a given corpus, `./sequoia/src/sequoia-ud.parseme.frsemcor.
 the output, run the following cell :
 
 ````shell
-python ./src/run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.train -u -s
+python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.train -u -s
 ````
 
 Data can also be preprocessed with existing vocabularies. The following shell performs the preprocessing on 

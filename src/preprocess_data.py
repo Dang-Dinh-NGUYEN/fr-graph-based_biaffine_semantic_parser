@@ -24,6 +24,7 @@ def preprocess_data(
         file_path: str,
         word_vocab: dict = cf.WORD_VOCAB,
         tag_vocab: dict = cf.TAG_VOCAB,
+        label_vocab: dict = cf.LABEL_VOCAB,
         update: bool = True,
         max_len: int = 50,
         device=None
@@ -34,10 +35,10 @@ def preprocess_data(
     with open(file_path, "r", encoding="UTF-8") as file:
         tokenLists = lib.conllulib.CoNLLUReader(file).readConllu()
 
-        words, tags, governors = [], [], []
+        words, tags, governors, deprels = [], [], [], []
 
         for tokenList in tqdm(tokenLists, desc="Processed", unit=f" sentence(s)"):
-            current_words, current_tags, current_governors = [], [], []
+            current_words, current_tags, current_governors, current_deprel = [], [], [], []
 
             for token in tokenList:
                 if token['form'] not in word_vocab and update:
@@ -50,26 +51,34 @@ def preprocess_data(
 
                 current_governors.append(token['head'])
 
+                if token['deprel'] not in label_vocab and update:
+                    label_vocab[token['deprel']] = len(label_vocab)
+                current_deprel.append(label_vocab.get(token['deprel'], label_vocab['UNK_ID']))
+
             if len(current_words) < max_len:
                 words.append(current_words)
                 tags.append(current_tags)
                 governors.append(current_governors)
+                deprels.append(current_deprel)
 
         words = pad_tensor(words, max_len, device=device)
         tags = pad_tensor(tags, max_len, device=device)
         governors = pad_tensor(governors, max_len, device=device)
+        deprels = pad_tensor(deprels, max_len, device=device)
 
-        return word_vocab, tag_vocab, words, tags, governors
+        return word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels
 
 
-def save_preprocessed_data(word_vocab: dict, tag_vocab: dict, words: torch.Tensor, tags: torch.Tensor,
-                           governors: torch.Tensor, save_path: str):
+def save_preprocessed_data(word_vocab: dict, tag_vocab: dict, label_vocab: dict, words: torch.Tensor, tags: torch.Tensor,
+                           governors: torch.Tensor, deprels: torch.Tensor, save_path: str):
     torch.save({
         'word_vocab': word_vocab,
         'tag_vocab': tag_vocab,
+        'label_vocab': label_vocab,
         'words': words.cpu(),
         'tags': tags.cpu(),
-        'governors': governors.cpu()
+        'governors': governors.cpu(),
+        'deprels': deprels.cpu()
     }, save_path)
     print('Saved preprocessed data to {}'.format(save_path))
 
@@ -85,9 +94,11 @@ def load_preprocessed_data(preprocessed_data_path: str, device=None):
     return (
         preprocessed_data['word_vocab'],
         preprocessed_data['tag_vocab'],
+        preprocessed_data['label_vocab'],
         preprocessed_data['words'].to(device),
         preprocessed_data['tags'].to(device),
-        preprocessed_data['governors'].to(device)
+        preprocessed_data['governors'].to(device),
+        preprocessed_data['deprels'].to(device)
     )
 
 
@@ -98,10 +109,8 @@ def display_preprocessed_data(*args):
 
         if isinstance(value, dict):
             print(f"Length: {len(value)}")
-            if len(value) > 100:
-                print(", ".join([f"{key}: {val}" for key, val in list(value.items())[:25]]))
-            else:
-                print(", ".join([f"{key}: {val}" for key, val in value.items()]))
+            items = list(value.items())[:25] if len(value) > 100 else value.items()
+            print(", ".join(f"{k}: {v}" for k, v in items))
 
         elif isinstance(value, list):
             print(f"Length: {len(value)}")
