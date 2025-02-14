@@ -13,13 +13,12 @@ def handle_preprocess(args):
     print(f"Preprocessing file : {args.input_file}")
 
     if args.load is None:
-        word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels = preprocess_data.preprocess_data(
-            file_path=args.input_file,
-            update=args.update,
-            max_len=args.max_len)
+        word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels = \
+                    preprocess_data.preprocess_data(file_path=args.input_file, update=args.update, max_len=args.max_len)
     else:
-        preprocessed_word_vocab, preprocessed_tag_vocab, preprocessed_label, _, _, _, _ = preprocess_data.load_preprocessed_data(
-            args.load)
+        preprocessed_word_vocab, preprocessed_tag_vocab, preprocessed_label, _, _, _, _ = \
+                                                                    preprocess_data.load_preprocessed_data(args.load)
+
         word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels = preprocess_data.preprocess_data(
             file_path=args.input_file,
             word_vocab=preprocessed_word_vocab,
@@ -43,38 +42,41 @@ def handle_train(args):
     """Handles training mode"""
 
     if args.ltrain:
-        word_vocab_train, tag_vocab_train, words_train, tags_train, governors_train = preprocess_data.load_preprocessed_data(
+        word_vocab_train, tag_vocab_train, label_vocab_train, words_train, tags_train, governors_train, deprels_train = preprocess_data.load_preprocessed_data(
             args.ltrain)
     else:
-        word_vocab_train, tag_vocab_train, words_train, tags_train, governors_train = preprocess_data.preprocess_data(
+        word_vocab_train, tag_vocab_train, label_vocab_train, words_train, tags_train, governors_train, deprels_train = preprocess_data.preprocess_data(
             file_path=args.ftrain, update=True, max_len=50)
 
     if args.ldev:
-        word_vocab_dev, tag_vocab_dev, words_dev, tags_dev, governors_dev = preprocess_data.load_preprocessed_data(
+        word_vocab_dev, tag_vocab_dev, label_vocab_dev, words_dev, tags_dev, governors_dev, deprels_dev = preprocess_data.load_preprocessed_data(
             args.ldev)
     else:
-        word_vocab_dev, tag_vocab_dev, words_dev, tags_dev, governors_dev = preprocess_data.preprocess_data(
+        word_vocab_dev, tag_vocab_dev, label_vocab_dev, words_dev, tags_dev, governors_dev, deprels_dev = preprocess_data.preprocess_data(
             file_path=args.fdev, word_vocab=word_vocab_train, tag_vocab=tag_vocab_train, update=False, max_len=50)
 
-    SemanticParser = biaffine_parser.biaffine_parser(len(word_vocab_train), len(tag_vocab_train), args.d_w, args.d_t,
-                                                     args.d_h, args.d, args.dropout_rate)
+    SemanticParser = biaffine_parser.biaffine_parser(V_w=len(word_vocab_train), V_t=len(tag_vocab_train),
+                                                     V_l=len(label_vocab_train), d_w=args.d_w, d_t=args.d_t,
+                                                     d_h=args.d_h, d_arc=args.d_arc, d_rel=args.d_rel,
+                                                     dropout_rate=args.dropout_rate)
 
     optimizer = torch.optim.Adam(SemanticParser.parameters(), lr=args.lr)
     loss_function = nn.CrossEntropyLoss()
 
     trainer = train_gbparser.Trainer(SemanticParser, optimizer, loss_function, args.batch_size)
-    history = trainer.train(words_train, tags_train, governors_train, words_dev, tags_dev, governors_dev, args.n_epochs)
+    history = trainer.train(words_train, tags_train, governors_train, deprels_train, words_dev, tags_dev, governors_dev, deprels_dev, args.n_epochs)
 
     if args.save and args.output is not None:
         tools.save_model(args.output, model=SemanticParser, optimizer=optimizer, criterion=loss_function,
-                         trained_words=word_vocab_train, trained_tags=tag_vocab_train, n_epochs=args.n_epochs,
+                         trained_words=word_vocab_train, trained_tags=tag_vocab_train, trained_labels=deprels_train, n_epochs=args.n_epochs,
                          batch_size=args.batch_size, history=history)
 
 
 def handle_predict(args):
     print(f"Loading model from {args.model}")
-    model, optimizer, criterion, trained_words, trained_tags = tools.load_model(trained_model_path=args.model,
-                                                                                device=device)
+    model, optimizer, criterion, trained_words, trained_tags, trained_labels = \
+        tools.load_model(trained_model_path=args.model, device=device)
+
     predict_gbparser.predict(model=model, input_file_path=args.input_file, output_file_path=args.output_file,
                              trained_words=trained_words, trained_tags=trained_tags, device=device)
 
@@ -108,7 +110,8 @@ if __name__ == '__main__':
     train_parser.add_argument('--d_w', type=int, default=100, help="dimension of word embeddings")
     train_parser.add_argument('--d_t', type=int, default=100, help="dimension of tag embeddings")
     train_parser.add_argument('--d_h', type=int, default=200, help="dimension of recurrent state")
-    train_parser.add_argument('--d', type=int, default=400, help="dimension of head/dependent vector")
+    train_parser.add_argument('--d_arc', type=int, default=400, help="dimension of head/dependent vector")
+    train_parser.add_argument('--d_rel', type=int, default=100, help="dimension of label vector")
     train_parser.add_argument('--dropout_rate', '-r', type=float, default=0.33, help="dropout rate")
 
     train_parser.add_argument('--n_epochs', type=int, default=10, help="number of training epochs")

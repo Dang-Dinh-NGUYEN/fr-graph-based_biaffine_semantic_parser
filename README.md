@@ -108,7 +108,7 @@ python ./run.py predict sequoia/sequoia-ud.parseme.frsemcor.simple.test ./sequoi
 Evaluate the predicted output with LAS/UAS :
 
 ````shell
-python lib/accuracy.py --pred sequoia-ud.parseme.frsemcor.simple.dev.test.conllu --gold sequoia/sequoia-ud.parseme.frsemcor.simple.test --tagcolumn head 
+python lib/accuracy.py --pred sequoia-ud.parseme.frsemcor.simple.test.pred.conllu --gold sequoia/sequoia-ud.parseme.frsemcor.simple.test --tagcolumn head 
 ````
 
 ## Version

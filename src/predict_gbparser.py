@@ -33,7 +33,7 @@ def predict(input_file_path: str, output_file_path: str, model, trained_words, t
                 sentence_forms = torch.tensor(sentence_forms, device=device).unsqueeze(0)
                 upos_tags = torch.tensor(upos_tags, device=device).unsqueeze(0)
 
-                logits = model(sentence_forms, upos_tags)
+                logits, _ = model(sentence_forms, upos_tags)
 
                 # Eliminate the first token to obtain the correct predictions
                 predicted_heads = torch.argmax(logits, dim=2).squeeze(0)[1:]

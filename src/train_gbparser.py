@@ -16,11 +16,11 @@ class Trainer:
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-    def train(self, words_train, tags_train, governors_train, words_dev, tags_dev, governors_dev, nb_epochs):
-        train_dataset = TensorDataset(words_train, tags_train, governors_train)
+    def train(self, words_train, tags_train, governors_train, label_train, words_dev, tags_dev, governors_dev, label_dev, nb_epochs):
+        train_dataset = TensorDataset(words_train, tags_train, governors_train, label_train)
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
-        dev_dataset = TensorDataset(words_dev, tags_dev, governors_dev)
+        dev_dataset = TensorDataset(words_dev, tags_dev, governors_dev, label_dev)
         dev_loader = DataLoader(dev_dataset, batch_size=self.batch_size, shuffle=False)
 
         for epoch in range(nb_epochs):
@@ -40,15 +40,19 @@ class Trainer:
         # Use tqdm for progress tracking
         with tqdm(dataloader, unit="batch") as pbar:
             for batch in pbar:
-                words, tags, governors = batch
+                words, tags, governors, labels = batch
 
                 words = words.to(self.device)
                 tags = tags.to(self.device)
                 governors = governors.to(self.device)
+                labels = labels.to(self.device)
 
                 self.optimizer.zero_grad()
-                output = self.model(words, tags, train)
-                loss = self._compute_loss(output, governors)
+                s_arc, s_rel = self.model(words, tags, train)
+                arc_loss = self._compute_loss(s_arc, governors)
+                # rel_loss = self._compute_loss(s_rel, labels)
+
+                loss = arc_loss # + rel_loss
                 if train:
                     loss.backward()
                     self.optimizer.step()
