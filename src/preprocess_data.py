@@ -1,6 +1,3 @@
-import os
-import sys
-
 import torch
 from tqdm import tqdm
 import src.config as cf
