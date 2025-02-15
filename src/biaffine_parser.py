@@ -20,8 +20,8 @@ class biaffine_parser(nn.Module):
         self.tag_embeddings = nn.Embedding(V_t, d_t, padding_idx=cf.PAD_TOKEN_VAL)
         self.dropout_rate = dropout_rate
 
-        self.rnn = nn.GRU(input_size=d_w + d_t, hidden_size=d_h, batch_first=True, bias=False,
-                          bidirectional=bidirectional, dropout=self.dropout_rate, num_layers=rnn_layers)
+        self.rnn = nn.LSTM(input_size=d_w + d_t, hidden_size=d_h, batch_first=True, bias=False,
+                           bidirectional=bidirectional, dropout=self.dropout_rate, num_layers=rnn_layers)
 
         if bidirectional:
             d_h *= 2
@@ -30,6 +30,7 @@ class biaffine_parser(nn.Module):
         self.arc_head_mlp = nn.Sequential(nn.Linear(d_h, d_arc), nn.ReLU(), nn.Dropout(self.dropout_rate))
         self.arc_dep_mlp = nn.Sequential(nn.Linear(d_h, d_arc), nn.ReLU(), nn.Dropout(self.dropout_rate))
         self.W_arc = nn.Linear(d_arc, d_arc, bias=False)
+        self.bias_arc = nn.Parameter(torch.Tensor(d_arc))
 
         # Label classifier
         self.rel_head_mlp = nn.Sequential(nn.Linear(d_h, d_rel), nn.ReLU(), nn.Dropout(self.dropout_rate))
@@ -37,8 +38,6 @@ class biaffine_parser(nn.Module):
 
         self.U_rel = nn.Parameter(torch.randn(V_l, d_rel, d_rel))
         self.W_rel = nn.Linear(2 * d_rel, V_l, bias=False)
-
-        self.bias_arc = nn.Parameter(torch.Tensor(d_arc))
         self.bias_rel = nn.Parameter(torch.Tensor(V_l))
 
         self.reset_parameters()
@@ -70,14 +69,15 @@ class biaffine_parser(nn.Module):
         H = torch.cat((word_emb, tag_emb), dim=-1)  # (B, L, d_t + d_w)
         H, _ = self.rnn(H)
 
+        """
+        Calculate arc score by deep bi-linear transformation as proposed in the work of "Dozat and Manning. Simpler but 
+        More Accurate Semantic Dependency Parsing. Proceedings of the 56th Annual Meeting of the Association for 
+        Computational Linguistics (Short Papers), pages 484–490 Melbourne, Australia, July 15 - 20, 2018.
+        """
+
         H_arc_head = self.arc_head_mlp(H)  # (B, L, d_arc)
         H_arc_dep = self.arc_dep_mlp(H)  # (B, L, d_arc)
 
-        """
-        Calculate arc score by bi-linear transformation as proposed in the work of "Dozat and Manning. Simpler but More 
-        Accurate Semantic Dependency Parsing. Proceedings of the 56th Annual Meeting of the Association for Computational
-        Linguistics (Short Papers), pages 484–490 Melbourne, Australia, July 15 - 20, 2018.
-        """
         W_arc_temp = self.W_arc(H_arc_dep)  # (B, L, d_arc)
         S_arc = torch.matmul(W_arc_temp, H_arc_head.transpose(1, 2))  # (B, L, L)
         S_arc += torch.matmul(H_arc_head, self.bias_arc.unsqueeze(0).T)  # Adding bias term results in final (B, L, L)

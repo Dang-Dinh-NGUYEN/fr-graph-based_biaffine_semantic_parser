@@ -36,10 +36,9 @@ def predict(input_file_path: str, output_file_path: str, model, trained_words, t
                 upos_tags = torch.tensor(upos_tags, device=device).unsqueeze(0)
 
                 S_arc, labels = model(sentence_forms, upos_tags)
-                print(S_arc.shape, labels.shape)
+
                 # Eliminate the first token to obtain the correct predictions
                 predicted_heads = torch.argmax(S_arc, dim=2).squeeze(0)[1:]
-                print(f"Predicted heads shape: {predicted_heads.shape}")
 
                 # Find the correct ROOT position
                 root_position = \
@@ -50,13 +49,10 @@ def predict(input_file_path: str, output_file_path: str, model, trained_words, t
                 predicted_heads[root_position] = 0
 
                 # Step 4: Predict labels
-                predicted_labels = torch.argmax(labels, dim=3).squeeze(0)  # Shape: [L, L]
-                print(f"Predicted labels shape: {predicted_labels.shape}")
-                print(predicted_labels)
+                predicted_labels = torch.argmax(labels, dim=3).squeeze(0)[1:] # Shape: [L, L]
 
                 # Step 5: Select labels for predicted head-word pairs
                 selected_labels = predicted_labels[torch.arange(len(predicted_heads)), predicted_heads]  # Shape: [L-1]
-                print(f"Final predicted labels shape: {selected_labels.shape}")
 
                 print([token['form'] for token in tokenList])
                 print(predicted_heads)
@@ -64,7 +60,6 @@ def predict(input_file_path: str, output_file_path: str, model, trained_words, t
                 print(selected_labels)
                 print(deprels)
                 print([token['deprel']for token in tokenList])
-                print(trained_label)
                 print()
 
                 predicted_heads = predicted_heads.tolist()
