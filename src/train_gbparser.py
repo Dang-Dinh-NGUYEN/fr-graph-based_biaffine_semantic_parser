@@ -16,7 +16,8 @@ class Trainer:
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-    def train(self, words_train, tags_train, governors_train, label_train, words_dev, tags_dev, governors_dev, label_dev, nb_epochs):
+    def train(self, words_train, tags_train, governors_train, label_train, words_dev, tags_dev, governors_dev,
+              label_dev, nb_epochs):
         train_dataset = TensorDataset(words_train, tags_train, governors_train, label_train)
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
@@ -49,10 +50,10 @@ class Trainer:
 
                 self.optimizer.zero_grad()
                 s_arc, s_rel = self.model(words, tags, train)
-                arc_loss = self._compute_loss(s_arc, governors)
-                # rel_loss = self._compute_loss(s_rel, labels)
+                arc_loss = self._compute_arc_loss(s_arc, governors)
+                rel_loss = self._compute_label_loss(s_rel, governors, labels)
 
-                loss = arc_loss # + rel_loss
+                loss = arc_loss + rel_loss
                 if train:
                     loss.backward()
                     self.optimizer.step()
@@ -68,27 +69,46 @@ class Trainer:
 
         return avg_loss
 
-    def _compute_loss(self, output, target):
+    def _compute_arc_loss(self, S_arcs, heads):
         """
-        Computes loss while handling padding.
+        Computes arc dependency loss while handling padding.
 
-        output: (batch_size, seq_length, vocab_size) - Model predictions
+        output: (batch_size, seq_length, seq_length) - Model predictions
         target: (batch_size, seq_length) - Ground truth head indices
         """
-        target = target.to(self.device)
+        heads = heads.to(self.device)
 
-        batch_size, seq_length, vocab_size = output.shape
+        batch_size, seq_length, _ = S_arcs.shape
 
         # Reshape output to (batch_size * seq_length, vocab_size)
-        output = output.view(-1, vocab_size)
+        output = S_arcs.view(-1, seq_length)
 
         # Reshape target to (batch_size * seq_length)
-        target = target.view(-1)
+        heads = heads.view(-1)
 
         # Apply mask to ignore PAD_TOKEN_VAL
-        mask = target != cf.PAD_TOKEN_VAL
+        mask = heads != cf.PAD_TOKEN_VAL
 
         valid_output = output[mask]
-        valid_target = target[mask]
+        valid_target = heads[mask]
 
         return self.criterion(valid_output, valid_target)
+
+    def _compute_label_loss(self, S_rel, heads, labels):
+        """
+           Computes label dependency loss on the gold arcs while handling padding.
+
+           output: (batch_size, seq_length, seq_length, num_labels) - Model predictions
+           target: (batch_size, seq_length) - Ground truth head indices
+        """
+        heads = heads.to(self.device)
+        labels = labels.to(self.device)
+
+        heads = heads.unsqueeze(1).unsqueeze(3)  # (B, 1, L, 1)
+        heads = heads.expand(-1, -1, -1, S_rel.size(3))  # (B, 1, L, c)
+        S_rel = torch.gather(S_rel, 2, heads).squeeze()  # (B, L, c)
+        S_rel = S_rel.view(-1, S_rel.size(-1))  # (B * L, c)
+
+        labels = labels.view(-1)
+
+        return self.criterion(S_rel, labels)

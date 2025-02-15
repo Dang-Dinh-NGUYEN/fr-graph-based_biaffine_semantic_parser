@@ -68,7 +68,7 @@ def handle_train(args):
 
     if args.save and args.output is not None:
         tools.save_model(args.output, model=SemanticParser, optimizer=optimizer, criterion=loss_function,
-                         trained_words=word_vocab_train, trained_tags=tag_vocab_train, trained_labels=deprels_train, n_epochs=args.n_epochs,
+                         trained_words=word_vocab_train, trained_tags=tag_vocab_train, trained_labels=label_vocab_train, n_epochs=args.n_epochs,
                          batch_size=args.batch_size, history=history)
 
 
@@ -78,7 +78,7 @@ def handle_predict(args):
         tools.load_model(trained_model_path=args.model, device=device)
 
     predict_gbparser.predict(model=model, input_file_path=args.input_file, output_file_path=args.output_file,
-                             trained_words=trained_words, trained_tags=trained_tags, device=device)
+                             trained_words=trained_words, trained_tags=trained_tags, trained_label=trained_labels, device=device)
 
 
 if __name__ == '__main__':
