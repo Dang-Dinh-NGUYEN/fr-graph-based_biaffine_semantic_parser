@@ -30,7 +30,7 @@ def load_model(trained_model_path: str, device=None):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     with open(trained_model_path, 'rb') as f:
-        parameters = pickle.load(f)  # Ensures CPU compatibility
+        parameters = pickle.load(f)
 
     model = parameters['model']
     model.to(device)  # Move to the specified device
