@@ -13,17 +13,17 @@ def handle_preprocess(args):
     print(f"Preprocessing file : {args.input_file}")
 
     if args.load is None:
-        word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels = \
+        form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels = \
                     preprocess_data.preprocess_data(file_path=args.input_file, update=args.update, max_len=args.max_len)
     else:
-        preprocessed_word_vocab, preprocessed_tag_vocab, preprocessed_label, _, _, _, _ = \
+        preprocessed_form_vocab, preprocessed_upos_vocab, preprocessed_deprel_vocab, _, _, _, _ = \
                                                                     preprocess_data.load_preprocessed_data(args.load)
 
-        word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels = preprocess_data.preprocess_data(
+        form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels = preprocess_data.preprocess_data(
             file_path=args.input_file,
-            word_vocab=preprocessed_word_vocab,
-            tag_vocab=preprocessed_tag_vocab,
-            label_vocab=preprocessed_label,
+            form_vocab=preprocessed_form_vocab,
+            upos_vocab=preprocessed_upos_vocab,
+            deprel_vocab=preprocessed_deprel_vocab,
             update=args.update,
             max_len=args.max_len)
 
@@ -32,53 +32,57 @@ def handle_preprocess(args):
         output_file = f"preprocessed_{filename}.pt"
         output_file = os.path.join(directory, output_file)
 
-        preprocess_data.save_preprocessed_data(word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels, output_file)
+        preprocess_data.save_preprocessed_data(form_vocab, upos_vocab, deprel_vocab, 
+                                               forms, upos, heads, deprels, output_file)
 
     if args.display:
-        preprocess_data.display_preprocessed_data(word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels)
+        preprocess_data.display_preprocessed_data(form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels)
 
 
 def handle_train(args):
     """Handles training mode"""
 
     if args.ltrain:
-        word_vocab_train, tag_vocab_train, label_vocab_train, words_train, tags_train, governors_train, deprels_train = preprocess_data.load_preprocessed_data(
-            args.ltrain)
+        form_vocab_train, upos_vocab_train, deprel_vocab_train, forms_train, upos_train, heads_train, deprels_train \
+            = preprocess_data.load_preprocessed_data(args.ltrain)
     else:
-        word_vocab_train, tag_vocab_train, label_vocab_train, words_train, tags_train, governors_train, deprels_train = preprocess_data.preprocess_data(
-            file_path=args.ftrain, update=True, max_len=50)
+        form_vocab_train, upos_vocab_train, deprel_vocab_train, forms_train, upos_train, heads_train, deprels_train \
+            = preprocess_data.preprocess_data(file_path=args.ftrain)
 
     if args.ldev:
-        word_vocab_dev, tag_vocab_dev, label_vocab_dev, words_dev, tags_dev, governors_dev, deprels_dev = preprocess_data.load_preprocessed_data(
-            args.ldev)
+        form_vocab_dev, upos_vocab_dev, deprel_vocab_dev, forms_dev, upos_dev, heads_dev, deprels_dev \
+            = preprocess_data.load_preprocessed_data(args.ldev)
     else:
-        word_vocab_dev, tag_vocab_dev, label_vocab_dev, words_dev, tags_dev, governors_dev, deprels_dev = preprocess_data.preprocess_data(
-            file_path=args.fdev, word_vocab=word_vocab_train, tag_vocab=tag_vocab_train, update=False, max_len=50)
+        form_vocab_dev, upos_vocab_dev, deprel_vocab_dev, forms_dev, upos_dev, heads_dev, deprels_dev \
+            = preprocess_data.preprocess_data(file_path=args.fdev, form_vocab=form_vocab_train, upos_vocab=upos_vocab_train, update=False)
 
-    SemanticParser = biaffine_parser.biaffine_parser(V_w=len(word_vocab_train), V_t=len(tag_vocab_train),
-                                                     V_l=len(label_vocab_train), d_w=args.d_w, d_t=args.d_t,
+    SemanticParser = biaffine_parser.biaffine_parser(V_w=len(form_vocab_train), V_t=len(upos_vocab_train),
+                                                     V_l=len(deprel_vocab_train), d_w=args.d_w, d_t=args.d_t,
                                                      d_h=args.d_h, d_arc=args.d_arc, d_rel=args.d_rel,
-                                                     dropout_rate=args.dropout_rate)
+                                                     rnn_model=args.rnn_type, rnn_layers=args.rnn_layers,
+                                                     bidirectional=args.bidirectional, dropout_rate=args.dropout_rate)
 
     optimizer = torch.optim.Adam(SemanticParser.parameters(), lr=args.lr)
     loss_function = nn.CrossEntropyLoss()
 
     trainer = train_gbparser.Trainer(SemanticParser, optimizer, loss_function, args.batch_size)
-    history = trainer.train(words_train, tags_train, governors_train, deprels_train, words_dev, tags_dev, governors_dev, deprels_dev, args.n_epochs)
+    history = trainer.train(forms_train, upos_train, heads_train, deprels_train,
+                            forms_dev, upos_dev, heads_dev, deprels_dev, args.n_epochs)
 
     if args.save and args.output is not None:
         tools.save_model(args.output, model=SemanticParser, optimizer=optimizer, criterion=loss_function,
-                         trained_words=word_vocab_train, trained_tags=tag_vocab_train, trained_labels=label_vocab_train, n_epochs=args.n_epochs,
-                         batch_size=args.batch_size, history=history)
+                         trained_forms=form_vocab_train, trained_upos=upos_vocab_train, trained_deprels=deprel_vocab_train,
+                         n_epochs=args.n_epochs, batch_size=args.batch_size, history=history)
 
 
 def handle_predict(args):
     print(f"Loading model from {args.model}")
-    model, optimizer, criterion, trained_words, trained_tags, trained_labels = \
+    model, optimizer, criterion, trained_forms, trained_upos, trained_deprels = \
         tools.load_model(trained_model_path=args.model, device=device)
 
     predict_gbparser.predict(model=model, input_file_path=args.input_file, output_file_path=args.output_file,
-                             trained_words=trained_words, trained_tags=trained_tags, trained_label=trained_labels, device=device)
+                             trained_forms=trained_forms, trained_upos=trained_upos, trained_deprels=trained_deprels,
+                             display=args.display, device=device)
 
 
 if __name__ == '__main__':
@@ -93,7 +97,7 @@ if __name__ == '__main__':
     preprocess_parser.add_argument("--load", '-l', type=str, help="path to preprocessed file")
     preprocess_parser.add_argument('--update', '-u', action='store_true',
                                    help='update vocabulary during preprocessing')
-    preprocess_parser.add_argument('--max_len', '-m', type=int, default=50, help='maximum sequence length (default=30)')
+    preprocess_parser.add_argument('--max_len', '-m', type=int, default=50, help='maximum sequence length (default=50)')
     preprocess_parser.add_argument('--save', '-s', action='store_true', help='save preprocessed data')
     preprocess_parser.add_argument('--display', '-d', action='store_true', help='display preprocessed data')
     preprocess_parser.set_defaults(func=handle_preprocess)
@@ -107,12 +111,16 @@ if __name__ == '__main__':
     train_parser.add_argument('--ltrain', type=str, help="path to preprocessed train file")
     train_parser.add_argument('--ldev', type=str, help="path to preprocessed dev file")
 
-    train_parser.add_argument('--d_w', type=int, default=100, help="dimension of word embeddings")
-    train_parser.add_argument('--d_t', type=int, default=100, help="dimension of tag embeddings")
-    train_parser.add_argument('--d_h', type=int, default=200, help="dimension of recurrent state")
-    train_parser.add_argument('--d_arc', type=int, default=400, help="dimension of head/dependent vector")
-    train_parser.add_argument('--d_rel', type=int, default=100, help="dimension of label vector")
-    train_parser.add_argument('--dropout_rate', '-r', type=float, default=0.33, help="dropout rate")
+    train_parser.add_argument('--d_w', type=int, default=100, help="dimension of form embeddings (default=100)")
+    train_parser.add_argument('--d_t', type=int, default=100, help="dimension of upos embeddings (default=100)")
+    train_parser.add_argument('--d_h', type=int, default=200, help="dimension of recurrent state (default=200)")
+    train_parser.add_argument('--d_arc', type=int, default=400, help="dimension of head/dependent vector (default=400)")
+    train_parser.add_argument('--d_rel', type=int, default=100, help="dimension of deprel vector (default=100)")
+    train_parser.add_argument('--rnn_type', '-t', choices=['lstm', 'gru'], default='lstm',
+                              help="type of rnn (default=lstm)")
+    train_parser.add_argument('--rnn_layers', type=int, default=3, help="number of rnn's layer (default=3)")
+    train_parser.add_argument('--bidirectional', action='store_true', help='enable bidirectional')
+    train_parser.add_argument('--dropout_rate', '-r', type=float, default=0.33, help="dropout rate (default=0.33)")
 
     train_parser.add_argument('--n_epochs', type=int, default=10, help="number of training epochs")
     train_parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
@@ -131,8 +139,9 @@ if __name__ == '__main__':
     predict_parser.add_argument('input_file', type=str, help="path to input file")
     predict_parser.add_argument('output_file', type=str, help="path to output file")
     predict_parser.add_argument('model', type=str, help="path to trained model")
-    # predict_parser.add_argument('--trained_words', type=str, default=None, help="path to trained word vocabulary")
-    # predict_parser.add_argument('--trained_tags', type=str, default=None, help="path to trained tag vocabulary")
+    predict_parser.add_argument('--display', '-d', action='store_true', help='display the predictions')
+    # predict_parser.add_argument('--trained_forms', type=str, default=None, help="path to trained form vocabulary")
+    # predict_parser.add_argument('--trained_uposs', type=str, default=None, help="path to trained upos vocabulary")
     predict_parser.set_defaults(func=handle_predict)
 
     args = parser.parse_args()

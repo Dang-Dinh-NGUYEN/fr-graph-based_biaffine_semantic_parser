@@ -4,7 +4,8 @@ import src.config as cf
 
 
 class biaffine_parser(nn.Module):
-    def __init__(self, V_w, V_t, V_l, d_w, d_t, d_h, d_arc, d_rel, rnn_layers=3, bidirectional=True, dropout_rate=0.33):
+    def __init__(self, V_w, V_t, V_l, d_w, d_t, d_h, d_arc, d_rel, rnn_model="lstm", rnn_layers=3, bidirectional=True,
+                 dropout_rate=0.33):
         """
         :param V_w: word vocabulary size
         :param V_t: tag vocabulary size
@@ -14,14 +15,21 @@ class biaffine_parser(nn.Module):
         :param d_h: recurrent states' dimension
         :param d_arc: head/dependent vector states' dimension
         :param d_rel: label vector states' dimension
+        :param rnn_layers: number of RNN layers
+        :param bidirectional: whether to use bidirectional
+        :param dropout_rate: dropout rate
         """
         super(biaffine_parser, self).__init__()
         self.word_embeddings = nn.Embedding(V_w, d_w, padding_idx=cf.PAD_TOKEN_VAL)
         self.tag_embeddings = nn.Embedding(V_t, d_t, padding_idx=cf.PAD_TOKEN_VAL)
         self.dropout_rate = dropout_rate
 
-        self.rnn = nn.LSTM(input_size=d_w + d_t, hidden_size=d_h, batch_first=True, bias=False,
-                           bidirectional=bidirectional, dropout=self.dropout_rate, num_layers=rnn_layers)
+        if rnn_model == "lstm":
+            self.rnn = nn.LSTM(input_size=d_w + d_t, hidden_size=d_h, batch_first=True, bias=False,
+                               bidirectional=bidirectional, dropout=self.dropout_rate, num_layers=rnn_layers)
+        elif rnn_model == "gru":
+            self.rnn = nn.GRU(input_size=d_w + d_t, hidden_size=d_h, batch_first=True, bias=False,
+                              bidirectional=bidirectional, dropout=self.dropout_rate, num_layers=rnn_layers)
 
         if bidirectional:
             d_h *= 2
