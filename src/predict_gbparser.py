@@ -1,17 +1,12 @@
-import io
-import os
-import pickle
-import sys
-
 import torch
-from torch.autograd import Variable
 from tqdm import tqdm
 
 from lib import conllulib
 import src.config as cf
 
 
-def predict(input_file_path: str, output_file_path: str, model, trained_words, trained_tags, trained_label, device=None):
+def predict(input_file_path: str, output_file_path: str, model, trained_forms, trained_upos, trained_deprels,
+            display=False, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -24,18 +19,16 @@ def predict(input_file_path: str, output_file_path: str, model, trained_words, t
         with open(output_file_path, 'w', encoding='UTF-8') as output_file:
             for tokenList in tqdm(tokenLists, desc="Processed", unit=f" sentence(s)"):
                 # Add PAD_TOKEN at the beginning of the sentence
-                sentence_forms = [cf.PAD_TOKEN_VAL] + [trained_words.get(token['form'], cf.UNK_TOKEN_VAL) for
+                sentence_forms = [cf.PAD_TOKEN_VAL] + [trained_forms.get(token['form'], cf.UNK_TOKEN_VAL) for
                                                        token in tokenList]
-                upos_tags = [cf.PAD_TOKEN_VAL] + [trained_tags.get(token['upos'], cf.UNK_TOKEN_VAL) for token in
+                upos_tags = [cf.PAD_TOKEN_VAL] + [trained_upos.get(token['upos'], cf.UNK_TOKEN_VAL) for token in
                                                   tokenList]
-                dependencies = torch.tensor([token['head'] for token in tokenList], device=device).unsqueeze(0)
-                deprels = torch.tensor([trained_label.get(token['deprel'], cf.UNK_TOKEN_VAL) for token in tokenList], device=device).unsqueeze(0)
 
                 # Convert to torch.Tensor
                 sentence_forms = torch.tensor(sentence_forms, device=device).unsqueeze(0)
                 upos_tags = torch.tensor(upos_tags, device=device).unsqueeze(0)
 
-                S_arc, labels = model(sentence_forms, upos_tags)
+                S_arc, deprels = model(sentence_forms, upos_tags)
 
                 # Eliminate the first token to obtain the correct predictions
                 predicted_heads = torch.argmax(S_arc, dim=2).squeeze(0)[1:]
@@ -48,27 +41,32 @@ def predict(input_file_path: str, output_file_path: str, model, trained_words, t
                 # Set that position to 0 (ROOT)
                 predicted_heads[root_position] = 0
 
-                # Step 4: Predict labels
-                predicted_labels = torch.argmax(labels, dim=3).squeeze(0)[1:] # Shape: [L, L]
+                # Step 4: Predict deprels
+                predicted_deprels = torch.argmax(deprels, dim=3).squeeze(0)[1:]  # (L, L)
 
-                # Step 5: Select labels for predicted head-word pairs
-                selected_labels = predicted_labels[torch.arange(len(predicted_heads)), predicted_heads]  # Shape: [L-1]
+                # Step 5: Select deprels for predicted head-word pairs
+                selected_deprels = predicted_deprels[torch.arange(len(predicted_heads)), predicted_heads]  # (L-1)
 
-                print([token['form'] for token in tokenList])
-                print(predicted_heads)
-                print(dependencies)
-                print(selected_labels)
-                print(deprels)
-                print([token['deprel']for token in tokenList])
-                print()
+                if display:
+                    print([token['form'] for token in tokenList])
+
+                    print(predicted_heads)
+                    dependencies = torch.tensor([token['head'] for token in tokenList], device=device).unsqueeze(0)
+                    print(dependencies)
+
+                    print(selected_deprels)
+                    deprels = torch.tensor(
+                        [trained_deprels.get(token['deprel'], cf.UNK_TOKEN_VAL) for token in tokenList],
+                        device=device).unsqueeze(0)
+                    print(deprels)
+                    print()
 
                 predicted_heads = predicted_heads.tolist()
-                selected_labels = selected_labels.tolist()
+                selected_deprels = selected_deprels.tolist()
 
-                for token, head, label in zip(tokenList, predicted_heads, selected_labels):
+                for token, head, label in zip(tokenList, predicted_heads, selected_deprels):
                     token['head'] = head
-                    adjusted_label = 2 if label in [0, 1] else label
-                    token['deprel'] = list(trained_label.keys())[list(trained_label.values()).index(adjusted_label)]
+                    token['deprel'] = list(trained_deprels.keys())[list(trained_deprels.values()).index(label)]
 
                 # Write the serialized token list to the output file
                 output_file.write(tokenList.serialize())

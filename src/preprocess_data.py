@@ -19,9 +19,9 @@ def pad_tensor(batchs: list, max_len: int, padding_value: int = cf.PAD_TOKEN_VAL
 
 def preprocess_data(
         file_path: str,
-        word_vocab: dict = cf.WORD_VOCAB,
-        tag_vocab: dict = cf.TAG_VOCAB,
-        label_vocab: dict = cf.LABEL_VOCAB,
+        form_vocab: dict = cf.FORM_VOCAB,
+        upos_vocab: dict = cf.UPOS_VOCAB,
+        deprel_vocab: dict = cf.DEPREL_VOCAB,
         update: bool = True,
         max_len: int = 50,
         device=None
@@ -32,49 +32,50 @@ def preprocess_data(
     with open(file_path, "r", encoding="UTF-8") as file:
         tokenLists = lib.conllulib.CoNLLUReader(file).readConllu()
 
-        words, tags, governors, deprels = [], [], [], []
+        forms, upos, heads, deprels = [], [], [], []
 
         for tokenList in tqdm(tokenLists, desc="Processed", unit=f" sentence(s)"):
-            current_words, current_tags, current_governors, current_deprel = [], [], [], []
+            current_forms, current_upos, current_heads, current_deprel = [], [], [], []
 
             for token in tokenList:
-                if token['form'] not in word_vocab and update:
-                    word_vocab[token['form']] = len(word_vocab)
-                current_words.append(word_vocab.get(token['form'], word_vocab['UNK_ID']))
+                if token['form'] not in form_vocab and update:
+                    form_vocab[token['form']] = len(form_vocab)
+                current_forms.append(form_vocab.get(token['form'], form_vocab['UNK_ID']))
 
-                if token['upos'] not in tag_vocab and update:
-                    tag_vocab[token['upos']] = len(tag_vocab)
-                current_tags.append(tag_vocab.get(token['upos'], tag_vocab['UNK_ID']))
+                if token['upos'] not in upos_vocab and update:
+                    upos_vocab[token['upos']] = len(upos_vocab)
+                current_upos.append(upos_vocab.get(token['upos'], upos_vocab['UNK_ID']))
 
-                current_governors.append(token['head'])
+                current_heads.append(token['head'])
 
-                if token['deprel'] not in label_vocab and update:
-                    label_vocab[token['deprel']] = len(label_vocab)
-                current_deprel.append(label_vocab.get(token['deprel'], label_vocab['UNK_ID']))
+                if token['deprel'] not in deprel_vocab and update:
+                    deprel_vocab[token['deprel']] = len(deprel_vocab)
+                current_deprel.append(deprel_vocab.get(token['deprel'], deprel_vocab['UNK_ID']))
 
-            if len(current_words) < max_len:
-                words.append(current_words)
-                tags.append(current_tags)
-                governors.append(current_governors)
+            if len(current_forms) < max_len:
+                forms.append(current_forms)
+                upos.append(current_upos)
+                heads.append(current_heads)
                 deprels.append(current_deprel)
 
-        words = pad_tensor(words, max_len, device=device)
-        tags = pad_tensor(tags, max_len, device=device)
-        governors = pad_tensor(governors, max_len, device=device)
+        forms = pad_tensor(forms, max_len, device=device)
+        upos = pad_tensor(upos, max_len, device=device)
+        heads = pad_tensor(heads, max_len, device=device)
         deprels = pad_tensor(deprels, max_len, device=device)
 
-        return word_vocab, tag_vocab, label_vocab, words, tags, governors, deprels
+        return form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels
 
 
-def save_preprocessed_data(word_vocab: dict, tag_vocab: dict, label_vocab: dict, words: torch.Tensor, tags: torch.Tensor,
-                           governors: torch.Tensor, deprels: torch.Tensor, save_path: str):
+def save_preprocessed_data(form_vocab: dict, upos_vocab: dict, deprel_vocab: dict,
+                           forms: torch.Tensor, upos: torch.Tensor, heads: torch.Tensor, deprels: torch.Tensor,
+                           save_path: str):
     torch.save({
-        'word_vocab': word_vocab,
-        'tag_vocab': tag_vocab,
-        'label_vocab': label_vocab,
-        'words': words.cpu(),
-        'tags': tags.cpu(),
-        'governors': governors.cpu(),
+        'form_vocab': form_vocab,
+        'upos_vocab': upos_vocab,
+        'deprel_vocab': deprel_vocab,
+        'forms': forms.cpu(),
+        'upos': upos.cpu(),
+        'heads': heads.cpu(),
         'deprels': deprels.cpu()
     }, save_path)
     print('Saved preprocessed data to {}'.format(save_path))
@@ -89,12 +90,12 @@ def load_preprocessed_data(preprocessed_data_path: str, device=None):
     preprocessed_data = torch.load(preprocessed_data_path)
 
     return (
-        preprocessed_data['word_vocab'],
-        preprocessed_data['tag_vocab'],
-        preprocessed_data['label_vocab'],
-        preprocessed_data['words'].to(device),
-        preprocessed_data['tags'].to(device),
-        preprocessed_data['governors'].to(device),
+        preprocessed_data['form_vocab'],
+        preprocessed_data['upos_vocab'],
+        preprocessed_data['deprel_vocab'],
+        preprocessed_data['forms'].to(device),
+        preprocessed_data['upos'].to(device),
+        preprocessed_data['heads'].to(device),
         preprocessed_data['deprels'].to(device)
     )
 

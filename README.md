@@ -1,4 +1,4 @@
-# Graph-based biaffine semantic parser for french corpora
+# Graph-based biaffine semantic parser of French
 
 ---
 #### Author : NGUYEN Dang Dinh - M2 IAAA, Aix - Marseille Université
@@ -8,6 +8,7 @@
 ## About this project
 
 ---
+
 This final project of our Master’s program in Artificial Intelligence and Machine Learning, delves into the core of 
 Natural Language Processing (NLP) by developing a graph-based biaffine dependency parser that predicts labeled dependency 
 structures. Unlike conventional tree-based approaches, our model is designed to predict arbitrary graphs, enabling it to
@@ -45,7 +46,7 @@ Data can also be preprocessed with existing vocabularies. The following shell pe
 `./sequoia/sequoia-ud.parseme.frsemcor.simple.dev` with vocabularies extracted from the corpus `.train` : 
 
 ````shell
-python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.dev -l=./sequoia/sequoia-ud.parseme.frsemcor.simple.train -s
+python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.dev -l=./sequoia/preprocessed_sequoia-ud.parseme.frsemcor.simple.train.pt -s
 ````
 
 Other arguments are available as presented below :
@@ -61,7 +62,7 @@ options:
   --load, -l LOAD       path to preprocessed file
   --update, -u          update vocabulary during preprocessing
   --max_len, -m MAX_LEN
-                        maximum sequence length (default=30)
+                        maximum sequence length (default=50)
   --save, -s            save preprocessed data
   --display, -d         display preprocessed data
 ````
@@ -71,12 +72,12 @@ At the beginning, we define our model and train it with similar configurations/c
 Dozat and Manning [^biaffine]. 
 
 ````shell
-python ./run.py train -s --output=./models/sample_model.pkl
+python ./run.py train --bidirectional -s --output=./models/sample_model.pkl
 ````
 Other arguments are presented as follows :
 ````
-usage: run.py train [-h] [--ftrain FTRAIN] [--fdev FDEV] [--ltrain LTRAIN] [--ldev LDEV] [--d_w D_W] [--d_t D_T] [--d_h D_H] [--d D] [--dropout DROPOUT] [--n_epochs N_EPOCHS] [--batch_size BATCH_SIZE] [--lr LR] [--save]
-                    [--output OUTPUT]
+usage: run.py train [-h] [--ftrain FTRAIN] [--fdev FDEV] [--ltrain LTRAIN] [--ldev LDEV] [--d_w D_W] [--d_t D_T] [--d_h D_H] [--d_arc D_ARC] [--d_rel D_REL] [--rnn_type {lstm,gru}] [--rnn_layers RNN_LAYERS] [--bidirectional]
+                    [--dropout_rate DROPOUT_RATE] [--n_epochs N_EPOCHS] [--batch_size BATCH_SIZE] [--lr LR] [--save] [--output OUTPUT]
 
 options:
   -h, --help            show this help message and exit
@@ -84,11 +85,18 @@ options:
   --fdev FDEV           path to dev corpus
   --ltrain LTRAIN       path to preprocessed train file
   --ldev LDEV           path to preprocessed dev file
-  --d_w D_W             dimension of word embeddings
-  --d_t D_T             dimension of tag embeddings
-  --d_h D_H             dimension of recurrent state
-  --d D                 dimension of head/dependent vector
-  --dropout DROPOUT     dropout rate
+  --d_w D_W             dimension of form embeddings (default=100)
+  --d_t D_T             dimension of upos embeddings (default=100)
+  --d_h D_H             dimension of recurrent state (default=200)
+  --d_arc D_ARC         dimension of head/dependent vector (default=400)
+  --d_rel D_REL         dimension of deprel vector (default=100)
+  --rnn_type, -t {lstm,gru}
+                        type of rnn (default=lstm)
+  --rnn_layers RNN_LAYERS
+                        number of rnn's layer (default=3)
+  --bidirectional       enable bidirectional
+  --dropout_rate, -r DROPOUT_RATE
+                        dropout rate (default=0.33)
   --n_epochs N_EPOCHS   number of training epochs
   --batch_size BATCH_SIZE
                         batch_size
@@ -101,20 +109,38 @@ options:
 To predict a corpus using a trained model, run the following command :
 
 ````shell
-python ./run.py predict sequoia/sequoia-ud.parseme.frsemcor.simple.test ./sequoia-ud.parseme.frsemcor.simple.test.pred.conllu ./models/sample_model.pkl  
+python ./run.py predict sequoia/sequoia-ud.parseme.frsemcor.simple.test models/predictions/sequoia-ud.parseme.frsemcor.simple.test.pred.conllu ./models/sample_model.pkl  
+````
+
+Available arguments are showed below:
+
+````
+usage: run.py predict [-h] [--display] input_file output_file model
+
+positional arguments:
+  input_file     path to input file
+  output_file    path to output file
+  model          path to trained model
+
+options:
+  -h, --help     show this help message and exit
+  --display, -d  display the predictions
 ````
 
 ### Evaluation
 Evaluate the predicted output with LAS/UAS :
 
 ````shell
-python lib/accuracy.py --pred sequoia-ud.parseme.frsemcor.simple.test.pred.conllu --gold sequoia/sequoia-ud.parseme.frsemcor.simple.test --tagcolumn head 
+python lib/accuracy.py --pred models/predictions/sequoia-ud.parseme.frsemcor.simple.test.pred.conllu --gold sequoia/sequoia-ud.parseme.frsemcor.simple.test --tagcolumn deprel 
 ````
 
-## Version
-- version 1.0.0 : graph-based semantic parser using simple GRU and dynamic word dropout with similar configurations to which proposed by [^biaffine]. The model predicts head-governor dependencies only
+## Releases
+- version 1.0.0 : Graph-based semantic parser using simple GRU and dynamic words dropout with similar configurations to which proposed by [^biaffine]. The model predicts head-governor dependencies only
+- version 1.1.0 : This graph-based semantic parser utilizes bidirectional LSTM/GRU layers with a word dropout rate of 0.33, maintaining configurations similar to the previous version. It has been extended to predict labeled dependencies for well-formed trees.
 
-
+## Results
+- version 1.0.0 achieved around 85% for UAS accuracy on test corpus
+- version 1.1.0 achieved 86.96% for UAS and 84.98 for LAS on all head
 ## TO DO
 
 ---

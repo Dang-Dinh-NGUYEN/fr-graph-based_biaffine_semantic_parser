@@ -12,16 +12,17 @@ class Trainer:
         self.optimizer = optimizer
         self.criterion = criterion
         self.batch_size = batch_size
-        self.history = {"train_loss": [], "dev_loss": []}
+        self.history = {"train_loss": [], "train_arc_loss": [], "train_rel_loss": [],
+                        "dev_loss": [], "dev_arc_loss": [], "dev_rel_loss": []}
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-    def train(self, words_train, tags_train, governors_train, label_train, words_dev, tags_dev, governors_dev,
-              label_dev, nb_epochs):
-        train_dataset = TensorDataset(words_train, tags_train, governors_train, label_train)
+    def train(self, forms_train, upos_train, heads_train, deprel_train, forms_dev, upos_dev, heads_dev,
+              deprel_dev, nb_epochs):
+        train_dataset = TensorDataset(forms_train, upos_train, heads_train, deprel_train)
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
-        dev_dataset = TensorDataset(words_dev, tags_dev, governors_dev, label_dev)
+        dev_dataset = TensorDataset(forms_dev, upos_dev, heads_dev, deprel_dev)
         dev_loader = DataLoader(dev_dataset, batch_size=self.batch_size, shuffle=False)
 
         for epoch in range(nb_epochs):
@@ -44,18 +45,18 @@ class Trainer:
         # Use tqdm for progress tracking
         with tqdm(dataloader, unit="batch") as pbar:
             for batch in pbar:
-                words, tags, governors, labels = batch
+                forms, upos, heads, deprels = batch
 
-                words = words.to(self.device)
-                tags = tags.to(self.device)
-                governors = governors.to(self.device)
-                labels = labels.to(self.device)
+                forms = forms.to(self.device)
+                upos = upos.to(self.device)
+                heads = heads.to(self.device)
+                deprels = deprels.to(self.device)
 
                 self.optimizer.zero_grad()
 
-                s_arc, s_rel = self.model(words, tags, train)
-                arc_loss = self._compute_arc_loss(s_arc, governors)
-                rel_loss = self._compute_label_loss(s_rel, governors, labels)
+                s_arc, s_rel = self.model(forms, upos, train)
+                arc_loss = self._compute_arc_loss(s_arc, heads)
+                rel_loss = self._compute_rel_loss(s_rel, heads, deprels)
 
                 loss = arc_loss + rel_loss
                 if train:
@@ -73,8 +74,11 @@ class Trainer:
         avg_arc_loss = total_arc_loss / len(dataloader)
         avg_rel_loss = total_rel_loss / len(dataloader)
 
-        loss_key = "train_loss" if train else "dev_loss"
-        self.history[loss_key].append(avg_loss)
+        for key, value in zip(
+                ["loss", "arc_loss", "rel_loss"],
+                [avg_loss, avg_arc_loss, avg_rel_loss]
+        ):
+            self.history[f'{"train" if train else "dev"}_{key}'].append(value)
 
         return avg_loss, avg_arc_loss, avg_rel_loss
 
@@ -103,33 +107,33 @@ class Trainer:
 
         return self.criterion(valid_arcs, valid_heads)
 
-    def _compute_label_loss(self, S_rel, heads, labels):
+    def _compute_rel_loss(self, S_rel, heads, deprels):
         """
-           Computes label dependency loss on the gold arcs while handling padding.
+           Computes rel dependency loss on the gold arcs while handling padding.
 
-           S_rel: (batch_size, seq_length, seq_length, num_labels) - Model predictions
+           S_rel: (batch_size, seq_length, seq_length, num_deprels) - Model predictions
            heads: (batch_size, seq_length) - Ground truth head indices
-           labels: (batch_size, seq_length) - Ground truth label indices
+           deprels: (batch_size, seq_length) - Ground truth deprel indices
         """
 
         heads = heads.to(self.device)  # (B, L)
-        labels = labels.to(self.device)  # (B, L)
+        deprels = deprels.to(self.device)  # (B, L)
 
         heads = heads.unsqueeze(-1).unsqueeze(-1)  # (B, L, 1, 1)
         heads = heads.expand(-1, -1, -1, S_rel.size(3))  # (B, L, 1, c)
+
         # Select only the true head-dependent pairs
         S_rel_gold = torch.gather(S_rel, 2, heads).squeeze(2)  # (B, L, C)
+
         # Reshape for loss computation
         S_rel_gold = S_rel_gold.view(-1, S_rel_gold.size(-1))  # (B * L, C)
-        labels = labels.view(-1)  # (B * L)
-        # print(labels.shape)
+        deprels = deprels.view(-1)  # (B * L)
+
         # Apply mask to ignore PAD_TOKEN_VAL
-        mask = labels != cf.PAD_TOKEN_VAL  # (B, 1, L, 1)
-        # print(mask.shape)
-        mask = mask.squeeze()  # Remove extra dims
-        # print(mask.shape)
+        mask = deprels != cf.PAD_TOKEN_VAL  # (B, 1, L, 1)
+        # mask = mask.squeeze()  # Remove extra dims
 
-        valid_output = S_rel_gold[mask]  # Correct shape (N_valid, c)
-        valid_target = labels[mask]  # Correct shape (N_valid,)
+        valid_hdp = S_rel_gold[mask]
+        valid_deprels = deprels[mask]
 
-        return self.criterion(valid_output, valid_target)
+        return self.criterion(valid_hdp, valid_deprels)

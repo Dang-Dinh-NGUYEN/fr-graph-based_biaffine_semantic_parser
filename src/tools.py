@@ -1,21 +1,19 @@
-import io
 import pickle
-
 import torch
-from src.biaffine_parser import biaffine_parser  # Ensure the class is imported
+from src.biaffine_parser import biaffine_parser
 
 torch.serialization.add_safe_globals([biaffine_parser])
 
 
-def save_model(file_path: str, model, optimizer, criterion, trained_words, trained_tags, trained_labels, n_epochs, batch_size,
-               history):
+def save_model(file_path: str, model, optimizer, criterion, trained_forms, trained_upos, trained_deprels, n_epochs,
+               batch_size, history):
     parameters = {
         'model': model,
         'optimizer': optimizer,
         'criterion': criterion,
-        'trained_words': trained_words,
-        'trained_tags': trained_tags,
-        'trained_labels': trained_labels,
+        'trained_forms': trained_forms,
+        'trained_upos': trained_upos,
+        'trained_deprels': trained_deprels,
         'n_epochs': n_epochs,
         'batch_size': batch_size,
         'history': history
@@ -37,9 +35,11 @@ def load_model(trained_model_path: str, device=None):
 
     optimizer = parameters['optimizer']
     criterion = parameters['criterion']
-    trained_words = parameters['trained_words']
-    trained_tags = parameters['trained_tags']
-    trained_labels = parameters['trained_labels']
+    trained_forms = parameters['trained_forms']
+    trained_upos = parameters['trained_upos']
+    trained_deprels = parameters['trained_deprels']
 
     print(f"Loaded model from {trained_model_path} on {device}")
-    return model, optimizer, criterion, trained_words, trained_tags, trained_labels
+    return model, optimizer, criterion, trained_forms, trained_upos, trained_deprels
+
+# TO DO : PLOT TRAINING CURVES
