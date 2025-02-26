@@ -144,9 +144,9 @@ python lib/accuracy.py --pred models/predictions/sequoia-ud.parseme.frsemcor.sim
 ## TO DO
 
 ---
-- [ ] Understanding the deep syntax structure of the Sequoia corpus, making it UD-compatible
+- [X] Understanding the deep syntax structure of the Sequoia corpus, making it UD-compatible
 - [X] Developing a biaffine classifier able to predict labeled syntactic trees
-  - [ ] Use a pre-trained transformer encoder instead of an RNN
+  - [X] Use a pre-trained transformer encoder instead of an RNN
 - [ ] Adapting the classifier to predict generic graphs instead of well-formed trees
 - [ ] Hyper-parameter optimisation of the system on the development corpus
 - [ ] Evaluation on the test portion of the deep syntax annotation of the Sequoia corpus
