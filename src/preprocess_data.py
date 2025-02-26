@@ -1,124 +1,175 @@
+import pprint
+from collections import defaultdict
+
 import torch
 from tqdm import tqdm
 import src.config as cf
 import lib.conllulib
 
 
-def pad_tensor(batchs: list, max_len: int, padding_value: int = cf.PAD_TOKEN_VAL, device=None) -> torch.Tensor:
+def pad_tensor(seq: list, max_len: int, pad_value: int = cf.PAD_TOKEN_VAL, device=None) -> torch.Tensor:
+    """
+    Pad sequences by prepending a designated padding value, and then append additional padding values until each
+    sequence reaches the maximum length.
+    :param seq: the input sequence to be padded
+    :param max_len: the maximum length of the padded sequence
+    :param pad_value: pad value to be prepended/added
+    :param device: device on which the tensor will be stored
+    :return: a torch.Tensor of padded sequence
+    """
+
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    result = torch.full((len(batchs), max_len), padding_value, dtype=torch.long, device=device)
+    padded_seq = torch.full((len(seq), max_len), pad_value, dtype=torch.long, device=device)
 
-    for i, sentence in enumerate(batchs):
-        result[i, 0] = padding_value  # Add padding ID at the beginning
-        result[i, 1:len(sentence) + 1] = torch.tensor(sentence[:], dtype=torch.long, device=device)
+    for i, sent in enumerate(seq):
+        padded_seq[i, 0] = pad_value  # Add padding ID at the beginning of the sentence
+        padded_seq[i, 1:len(sent) + 1] = sent.clone().detach().to(device)
 
-    return result
+    return padded_seq
 
 
-def preprocess_data(
-        file_path: str,
-        form_vocab: dict = cf.FORM_VOCAB,
-        upos_vocab: dict = cf.UPOS_VOCAB,
-        deprel_vocab: dict = cf.DEPREL_VOCAB,
-        update: bool = True,
-        max_len: int = 50,
-        device=None
-):
+def preprocess_data(file_path: str, columns: list = None, vocabularies=None, tokenizer=None,
+                    pre_trained_model=None, update=True, pad_value: int = cf.PAD_TOKEN_VAL,
+                    unk_value: int = cf.UNK_TOKEN_VAL, max_len: int = 50, device=None):
+    """
+    Preprocess data from CoNLL-U files.
+    """
+
+    if vocabularies is None:
+        vocabularies = {}
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if columns is None:
+        columns = ['form', 'upos', 'head', 'deprel']
+    else:
+        ud_columns = ['form', 'lemma', 'upos', 'xpos', 'feats', 'head', 'deprel',
+                      'deps', 'misc', 'parseme:mwe', 'frsemcor:noun', 'parseme:ne']
+        assert all(col in ud_columns for col in columns), "Invalid column(s) in input"
+
+    for col in columns:
+        if col in ['head']:
+            continue
+        elif vocabularies.get(f"{col.split(':')[-1]}_vocab") is None:
+            vocabularies[f"{col.split(':')[-1]}_vocab"] = {"PAD_ID": pad_value, "UNK_ID": unk_value}
 
     with open(file_path, "r", encoding="UTF-8") as file:
         tokenLists = lib.conllulib.CoNLLUReader(file).readConllu()
 
-        forms, upos, heads, deprels = [], [], [], []
+        extracted_values = {f"extracted_{col}": [] for col in columns}
+        if tokenizer and pre_trained_model:
+            extracted_values["extracted_contextual_embeddings"] = []
 
-        for tokenList in tqdm(tokenLists, desc="Processed", unit=f" sentence(s)"):
-            current_forms, current_upos, current_heads, current_deprel = [], [], [], []
+        for tokenList in tqdm(tokenLists, desc="Processed", unit=" sentence(s)"):
+            current_values = {f"current_{col}": [] for col in columns if col != 'id'}
 
             for token in tokenList:
-                if token['form'] not in form_vocab and update:
-                    form_vocab[token['form']] = len(form_vocab)
-                current_forms.append(form_vocab.get(token['form'], form_vocab['UNK_ID']))
+                for col in columns:
+                    col_name = f"{col.split(':')[-1]}_vocab"
 
-                if token['upos'] not in upos_vocab and update:
-                    upos_vocab[token['upos']] = len(upos_vocab)
-                current_upos.append(upos_vocab.get(token['upos'], upos_vocab['UNK_ID']))
+                    if col == 'head':
+                        current_values[f"current_{col}"].append(token[col])
+                    else:
+                        if col_name not in vocabularies:
+                            vocabularies[col_name] = {"PAD_ID": pad_value, "UNK_ID": unk_value}
 
-                current_heads.append(token['head'])
+                        if token[col] not in vocabularies[col_name] and update:
+                            vocabularies[col_name][token[col]] = len(vocabularies[col_name])
 
-                if token['deprel'] not in deprel_vocab and update:
-                    deprel_vocab[token['deprel']] = len(deprel_vocab)
-                current_deprel.append(deprel_vocab.get(token['deprel'], deprel_vocab['UNK_ID']))
+                        current_values[f"current_{col}"].append(
+                            vocabularies[col_name].get(token[col], vocabularies[col_name]["UNK_ID"])
+                        )
 
-            if len(current_forms) < max_len:
-                forms.append(current_forms)
-                upos.append(current_upos)
-                heads.append(current_heads)
-                deprels.append(current_deprel)
+            if len(current_values[next(iter(current_values))]) < max_len:
+                for col in columns:
+                    extracted_values[f"extracted_{col}"].append(
+                        torch.tensor(current_values[f"current_{col}"], dtype=torch.long)
+                    )
+                if tokenizer and pre_trained_model:
+                    current_contextual_embeddings = compute_contextual_embeddings(
+                        sentence=[token['form'] for token in tokenList], tokenizer=tokenizer,
+                        pretrained_model=pre_trained_model, max_len=max_len, device=device
+                    )
 
-        forms = pad_tensor(forms, max_len, device=device)
-        upos = pad_tensor(upos, max_len, device=device)
-        heads = pad_tensor(heads, max_len, device=device)
-        deprels = pad_tensor(deprels, max_len, device=device)
+                    extracted_values["extracted_contextual_embeddings"].append(current_contextual_embeddings)
 
-        return form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels
+        for extracted in extracted_values.keys():
+            if extracted == "extracted_contextual_embeddings":
+                extracted_values[extracted] = torch.stack(extracted_values[extracted]).to("cpu")
+            else:
+                extracted_values[extracted] = pad_tensor(extracted_values[extracted], pad_value=pad_value,
+                                                         max_len=max_len).to("cpu")
+
+    preprocessed_data = {**extracted_values, **vocabularies}
+    return preprocessed_data
 
 
-def save_preprocessed_data(form_vocab: dict, upos_vocab: dict, deprel_vocab: dict,
-                           forms: torch.Tensor, upos: torch.Tensor, heads: torch.Tensor, deprels: torch.Tensor,
-                           save_path: str):
-    torch.save({
-        'form_vocab': form_vocab,
-        'upos_vocab': upos_vocab,
-        'deprel_vocab': deprel_vocab,
-        'forms': forms.cpu(),
-        'upos': upos.cpu(),
-        'heads': heads.cpu(),
-        'deprels': deprels.cpu()
-    }, save_path)
-    print('Saved preprocessed data to {}'.format(save_path))
+def compute_contextual_embeddings(sentence: list, tokenizer, pretrained_model, max_len: int = 50,
+                                  device=None) -> torch.Tensor:
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    sentence = [tokenizer.pad_token] + sentence + [tokenizer.pad_token] * (
+            max_len - len(sentence) - 1)  # Pad input the input sentence
+
+    tokenized_sentence = tokenizer(sentence, return_tensors="pt", is_split_into_words=True).to(device)
+    subword_ids = tokenized_sentence.word_ids()
+    subword_ids = subword_ids[1:-1]  # Remove BOS and EOS tokens
+
+    with torch.no_grad():
+        subword_embeddings = pretrained_model(**tokenized_sentence)['last_hidden_state'][0]
+
+    subword_embeddings = subword_embeddings[1:-1]  # Remove BOS and EOS tokens
+
+    # Align sub-words embeddings
+    aligned_subword_emb = defaultdict(list)
+    for i, subword in enumerate(subword_ids):
+        aligned_subword_emb[subword].append(subword_embeddings[i])
+
+    # Compute contextual embedding for each aligned subword
+    contextual_embedding = torch.stack([torch.stack(aligned_subword_emb[i]).mean(dim=0)
+                                        for i in sorted(aligned_subword_emb.keys())]).to("cpu")
+
+    return contextual_embedding.long()
+
+
+def save_preprocessed_data(data, file_path):
+    torch.save(data, file_path)
+    print(f"Saved preprocessed data to {file_path}")
 
 
 def load_preprocessed_data(preprocessed_data_path: str, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print('Loading preprocessed data from {}'.format(preprocessed_data_path))
+    print(f"Loading preprocessed data from {preprocessed_data_path}")
 
     preprocessed_data = torch.load(preprocessed_data_path)
 
-    return (
-        preprocessed_data['form_vocab'],
-        preprocessed_data['upos_vocab'],
-        preprocessed_data['deprel_vocab'],
-        preprocessed_data['forms'].to(device),
-        preprocessed_data['upos'].to(device),
-        preprocessed_data['heads'].to(device),
-        preprocessed_data['deprels'].to(device)
-    )
+    return preprocessed_data
 
 
-def display_preprocessed_data(*args):
-    print(f"\nDisplaying preprocessed data")
-    for value in args:
-        print(f"Type: {type(value)}")
+# --- Display ---
+def display_preprocessed_data(data, max_rows=25):
+    pp = pprint.PrettyPrinter()
 
-        if isinstance(value, dict):
-            print(f"Length: {len(value)}")
-            items = list(value.items())[:25] if len(value) > 100 else value.items()
-            print(", ".join(f"{k}: {v}" for k, v in items))
+    for key, value in data.items():
+        print(f"\n ---{key}---")
 
-        elif isinstance(value, list):
-            print(f"Length: {len(value)}")
-            print(value[:25] if len(value) > 100 else value)
+        if isinstance(value, torch.Tensor):
+            print("(Tensor shape:", value.shape, ")")
+            print(torch.tensor(value.tolist()[:max_rows]))  # Convert tensor to list for easy printing
 
-        elif isinstance(value, torch.Tensor):
-            print(f"Shape: {value.shape}")
-            print(value[:25] if value.shape[0] > 100 else value)
+        elif isinstance(value, dict):
+            print("(Dict size:", len(value), ")")
+            sample_items = list(value.items())[:max_rows]
+            pp.pprint(dict(sample_items))  # Pretty-print dictionary
+
+        elif isinstance(value, list):  # Handling contextual embeddings (if stored as lists)
+            print(value[:max_rows])
 
         else:
-            print("Length/Shape: Not applicable")
-
-        print()
+            print("(Unknown Type)")
+            print(value)
