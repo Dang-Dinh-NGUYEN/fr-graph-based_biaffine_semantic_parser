@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 import src.config as cf
+from src.modules import TransformerEncoder, RecurrentEncoder
 
 
 class Trainer:
@@ -17,12 +18,15 @@ class Trainer:
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-    def train(self, forms_train, upos_train, heads_train, deprel_train, forms_dev, upos_dev, heads_dev,
-              deprel_dev, nb_epochs):
-        train_dataset = TensorDataset(forms_train, upos_train, heads_train, deprel_train)
+    def train(self, train_data, dev_data, nb_epochs):
+        print(train_data.keys())
+        extracted_train_data = [tensor for key, tensor in train_data.items() if key.startswith("extracted")]
+        train_dataset = TensorDataset(*extracted_train_data)
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
-        dev_dataset = TensorDataset(forms_dev, upos_dev, heads_dev, deprel_dev)
+        print(dev_data.keys())
+        extracted_dev_data = [tensor for key, tensor in dev_data.items() if key.startswith("extracted")]
+        dev_dataset = TensorDataset(*extracted_dev_data)
         dev_loader = DataLoader(dev_dataset, batch_size=self.batch_size, shuffle=False)
 
         for epoch in range(nb_epochs):
@@ -32,8 +36,9 @@ class Trainer:
             self.model.eval()
             avg_dev_loss, arc_loss_dev, rel_loss_dev = self._run_epoch(dev_loader, train=False)
 
-            print(f"Epoch {epoch + 1}/{nb_epochs}, Training Loss: {avg_train_loss:.4f} (arc loss = {arc_loss_train:.4f},"
-                  f" rel loss = {rel_loss_train:.4f}), Dev Loss: {avg_dev_loss:.4f} (arc loss = {arc_loss_dev:.4f}, rel loss = {rel_loss_dev:.4f})")
+            print(
+                f"Epoch {epoch + 1}/{nb_epochs}, Training Loss: {avg_train_loss:.4f} (arc loss = {arc_loss_train:.4f},"
+                f" rel loss = {rel_loss_train:.4f}), Dev Loss: {avg_dev_loss:.4f} (arc loss = {arc_loss_dev:.4f}, rel loss = {rel_loss_dev:.4f})")
 
         return self.history
 
@@ -45,16 +50,29 @@ class Trainer:
         # Use tqdm for progress tracking
         with tqdm(dataloader, unit="batch") as pbar:
             for batch in pbar:
-                forms, upos, heads, deprels = batch
-
-                forms = forms.to(self.device)
-                upos = upos.to(self.device)
-                heads = heads.to(self.device)
-                deprels = deprels.to(self.device)
-
                 self.optimizer.zero_grad()
 
-                s_arc, s_rel = self.model(forms, upos, train)
+                if isinstance(self.model.encoder, RecurrentEncoder):
+                    forms, upos, heads, deprels = batch
+
+                    forms = forms.to(self.device)
+                    upos = upos.to(self.device)
+                    heads = heads.to(self.device)
+                    deprels = deprels.to(self.device)
+
+                    s_arc, s_rel = self.model(train, forms, upos)
+
+                elif isinstance(self.model.encoder, TransformerEncoder):
+                    forms, upos, heads, deprels, contextual_embeddings = batch
+
+                    forms = forms.to(self.device)
+                    upos = upos.to(self.device)
+                    heads = heads.to(self.device)
+                    deprels = deprels.to(self.device)
+                    contextual_embeddings = contextual_embeddings.to(self.device)
+
+                    s_arc, s_rel = self.model(train, contextual_embeddings, upos)
+
                 arc_loss = self._compute_arc_loss(s_arc, heads)
                 rel_loss = self._compute_rel_loss(s_rel, heads, deprels)
 
@@ -131,7 +149,6 @@ class Trainer:
 
         # Apply mask to ignore PAD_TOKEN_VAL
         mask = deprels != cf.PAD_TOKEN_VAL  # (B, 1, L, 1)
-        # mask = mask.squeeze()  # Remove extra dims
 
         valid_hdp = S_rel_gold[mask]
         valid_deprels = deprels[mask]
