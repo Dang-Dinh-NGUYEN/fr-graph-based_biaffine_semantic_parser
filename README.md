@@ -18,7 +18,7 @@ Through rigorous implementation and evaluation, this project aims to advance the
 offering valuable insights into the strengths and limitations of graph-based models and paving the way for more robust 
 and semantically aware language processing systems.
 
-The project is mainly developed using python, pytorch, transformers, and conllu libraries.
+The project is mainly developed using python, pytorch, huggingface, and conllu libraries.
 
 ## Project organisation
 
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ### Data preprocessing
 
-To prepare data from a given corpus, `./sequoia/src/sequoia-ud.parseme.frsemcor.simple.train` for example, and save
+To prepare data from a given corpus, `./sequoia/sequoia-ud.parseme.frsemcor.simple.train` for example, and save
 the output, run the following cell :
 
 ````shell
@@ -46,38 +46,53 @@ Data can also be preprocessed with existing vocabularies. The following shell pe
 `./sequoia/sequoia-ud.parseme.frsemcor.simple.dev` with vocabularies extracted from the corpus `.train` : 
 
 ````shell
-python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.dev -l=./sequoia/preprocessed_sequoia-ud.parseme.frsemcor.simple.train.pt -s
+python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.dev -l ./sequoia/preprocessed_sequoia-ud.parseme.frsemcor.simple.train.pt -s
 ````
 
 Other arguments are available as presented below :
 
 ````
-usage: run.py preprocess [-h] [--load LOAD] [--update] [--max_len MAX_LEN] [--save] [--display] input_file
+usage: run.py preprocess [-h] [--columns COLUMNS] [--update] [--transformer {None,almanach/camembert-base}] [--max_len MAX_LEN] [--save] [--load LOAD] [--display] input_file
 
 positional arguments:
   input_file            path to input file
 
 options:
   -h, --help            show this help message and exit
-  --load, -l LOAD       path to preprocessed file
+  --columns, -c COLUMNS
+                        column.s to be extracted (default = form, upos, head, deprel)
   --update, -u          update vocabulary during preprocessing
+  --transformer {None,almanach/camembert-base}
+                        name of pre_trained transformer to be used (default=None)
   --max_len, -m MAX_LEN
                         maximum sequence length (default=50)
   --save, -s            save preprocessed data
+  --load, -l LOAD       path to pre-processed file
   --display, -d         display preprocessed data
 ````
+
+**Note: By selecting a pre-trained transformer (e.g. almanach/camembert-base), contextual embeddings are preprocessed in addition.**
 
 ### Training model
 At the beginning, we define our model and train it with similar configurations/conditions as mentioned in the article of 
 Dozat and Manning [^biaffine]. 
 
 ````shell
-python ./run.py train --bidirectional -s --output=./models/sample_model.pkl
+python ./run.py train lstm --bidirectional -s ./models/sample_model.pkl
 ````
-Other arguments are presented as follows :
+Other arguments are available as follows :
 ````
-usage: run.py train [-h] [--ftrain FTRAIN] [--fdev FDEV] [--ltrain LTRAIN] [--ldev LDEV] [--d_w D_W] [--d_t D_T] [--d_h D_H] [--d_arc D_ARC] [--d_rel D_REL] [--rnn_type {lstm,gru}] [--rnn_layers RNN_LAYERS] [--bidirectional]
-                    [--dropout_rate DROPOUT_RATE] [--n_epochs N_EPOCHS] [--batch_size BATCH_SIZE] [--lr LR] [--save] [--output OUTPUT]
+usage: run.py train [-h] [--ftrain FTRAIN] [--fdev FDEV] [--ltrain LTRAIN] [--ldev LDEV] [--d_arc D_ARC] [--d_rel D_REL] [--dropout_rate DROPOUT_RATE] [--n_epochs N_EPOCHS]
+                    [--batch_size BATCH_SIZE] [--lr LR] [--patience PATIENCE] [--save SAVE]
+                    {lstm,gru,almanach/camembert-base} ...
+
+positional arguments:
+  {lstm,gru,almanach/camembert-base}
+                        encoder type: lstm | gru | almanach/camembert-base
+    lstm                lstm encoder
+    gru                 gru encoder
+    almanach/camembert-base
+                        camembert encoder
 
 options:
   -h, --help            show this help message and exit
@@ -85,26 +100,51 @@ options:
   --fdev FDEV           path to dev corpus
   --ltrain LTRAIN       path to preprocessed train file
   --ldev LDEV           path to preprocessed dev file
-  --d_w D_W             dimension of form embeddings (default=100)
-  --d_t D_T             dimension of upos embeddings (default=100)
-  --d_h D_H             dimension of recurrent state (default=200)
   --d_arc D_ARC         dimension of head/dependent vector (default=400)
   --d_rel D_REL         dimension of deprel vector (default=100)
-  --rnn_type, -t {lstm,gru}
-                        type of rnn (default=lstm)
-  --rnn_layers RNN_LAYERS
-                        number of rnn's layer (default=3)
-  --bidirectional       enable bidirectional
   --dropout_rate, -r DROPOUT_RATE
                         dropout rate (default=0.33)
   --n_epochs N_EPOCHS   number of training epochs
   --batch_size BATCH_SIZE
                         batch_size
   --lr LR               learning rate
-  --save, -s            save trained model
-  --output, -o OUTPUT   path to save model
+  --patience, -p PATIENCE
+                        number of patiences
+  --save, -s SAVE       path to save model
 ````
 
+For RNN-based parser, our program allows the following options:
+
+````
+usage: run.py train lstm [-h] [--embeddings EMBEDDINGS] [--embeddings_dim EMBEDDINGS_DIM] [--d_h D_H] [--rnn_layers RNN_LAYERS] [--bidirectional]
+
+options:
+  -h, --help            show this help message and exit
+  --embeddings, -e EMBEDDINGS
+                        supplementary embeddings (default = form, upos)
+  --embeddings_dim, -ed EMBEDDINGS_DIM
+                        dimensions of supplementary embeddings (default = 100, 100)
+  --d_h D_H             dimension of recurrent state (default=200)
+  --rnn_layers RNN_LAYERS
+                        number of rnn's layer (default=3)
+  --bidirectional       enable bidirectional
+````
+
+The use of pre-trained transformer are supported with additional features:
+
+```` 
+usage: run.py train almanach/camembert-base [-h] [--embeddings EMBEDDINGS] [--embeddings_dim EMBEDDINGS_DIM] [--unfreeze UNFREEZE]
+
+options:
+  -h, --help            show this help message and exit
+  --embeddings, -e EMBEDDINGS
+                        supplementary embeddings
+  --embeddings_dim, -ed EMBEDDINGS_DIM
+                        dimensions of supplementary embeddings
+  --unfreeze UNFREEZE   last n layers to be fine tuned (default=0)
+````
+
+**Note: Our a transformer-based parser was not designed to fine-tune any pre-trained transformer. Therefore, selecting --unfreeze has no effects!**
 ### Predict
 To predict a corpus using a trained model, run the following command :
 
@@ -135,22 +175,25 @@ python lib/accuracy.py --pred models/predictions/sequoia-ud.parseme.frsemcor.sim
 ````
 
 ## Releases
-- version 1.0.0 : Graph-based semantic parser using simple GRU and dynamic words dropout with similar configurations to which proposed by [^biaffine]. The model predicts head-governor dependencies only
+- version 1.0.0 : Graph-based semantic parser using simple GRU and dynamic words dropout with similar configurations to which proposed by [^biaffine]. The model predicts head-governor dependencies only.
 - version 1.1.0 : This graph-based semantic parser utilizes bidirectional LSTM/GRU layers with a word dropout rate of 0.33, maintaining configurations similar to the previous version. It has been extended to predict labeled dependencies for well-formed trees.
+- version 1.2.0 : Pre-trained transformer is incorporate into our parser for prediction of dependency structures of well-formed trees.
 
 ## Results
-- version 1.0.0 achieved around 85% for UAS accuracy on test corpus
-- version 1.1.0 achieved 86.96% for UAS and 84.98 for LAS on all head
+- version 1.0.0 achieved around 85% for UAS accuracy on the test corpus.
+- version 1.1.0 achieved 86.96% for UAS and 84.98% for LAS on all head.
+- version 1.2.0 with pre-trained camembert transformer achieved 81.56% for UAS and 75.85% for LAS on the test corpus.
+
 ## TO DO
 
 ---
-- [ ] Understanding the deep syntax structure of the Sequoia corpus, making it UD-compatible
+- [X] Understanding the deep syntax structure of the Sequoia corpus, making it UD-compatible
 - [X] Developing a biaffine classifier able to predict labeled syntactic trees
-  - [ ] Use a pre-trained transformer encoder instead of an RNN
+  - [X] Use a pre-trained transformer encoder instead of an RNN
 - [ ] Adapting the classifier to predict generic graphs instead of well-formed trees
 - [ ] Hyper-parameter optimisation of the system on the development corpus
 - [ ] Evaluation on the test portion of the deep syntax annotation of the Sequoia corpus
   - [ ] In particular, implementing a script to evaluate the predictions
 
 ## References
-[^biaffine] : Dozat et al. Stanford’s Graph-based Neural Dependency Parser at the CoNLL 2017 Shared Task. CoNLL 2017 Shared Task: Multilingual Parsing from Raw Text to Universal Dependencies, pages 20–30, Vancouver, Canada, August 3-4, 2017. 
+[^biaffine]: Dozat et al. Stanford’s Graph-based Neural Dependency Parser at the CoNLL 2017 Shared Task. CoNLL 2017 Shared Task: Multilingual Parsing from Raw Text to Universal Dependencies, pages 20–30, Vancouver, Canada, August 3-4, 2017. 

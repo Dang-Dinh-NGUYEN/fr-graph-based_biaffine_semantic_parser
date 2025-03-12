@@ -1,9 +1,12 @@
 import argparse
 import os
-
+import time
 import torch
 from torch import nn
+from transformers import AutoTokenizer, AutoModel
 
+from src.modules import TransformerEncoder, RecurrentEncoder, Embedding
+from src.tools import list_of_strings, list_of_int
 from src import preprocess_data, biaffine_parser, predict_gbparser, train_gbparser, tools
 from src import config as cf
 
@@ -12,98 +15,152 @@ def handle_preprocess(args):
     """Handles data preprocessing mode"""
     print(f"Preprocessing file : {args.input_file}")
 
-    if args.load is None:
-        form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels = \
-                    preprocess_data.preprocess_data(file_path=args.input_file, update=args.update, max_len=args.max_len)
-    else:
-        preprocessed_form_vocab, preprocessed_upos_vocab, preprocessed_deprel_vocab, _, _, _, _ = \
-                                                                    preprocess_data.load_preprocessed_data(args.load)
+    tokenizer = pre_trained_model = None
+    pad_value = cf.PAD_TOKEN_VAL
+    unk_value = cf.UNK_TOKEN_VAL
 
-        form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels = preprocess_data.preprocess_data(
-            file_path=args.input_file,
-            form_vocab=preprocessed_form_vocab,
-            upos_vocab=preprocessed_upos_vocab,
-            deprel_vocab=preprocessed_deprel_vocab,
-            update=args.update,
-            max_len=args.max_len)
+    if args.transformer:
+        tokenizer = AutoTokenizer.from_pretrained(args.transformer)
+        pre_trained_model = AutoModel.from_pretrained(args.transformer)
+        pre_trained_model.to(device)
+
+        pad_value = tokenizer.pad_token_id
+        unk_value = tokenizer.unk_token_id
+
+    if args.load is None:
+        preprocessed_data = \
+            preprocess_data.preprocess_data(file_path=args.input_file, columns=args.columns,
+                                            tokenizer=tokenizer, pre_trained_model=pre_trained_model,
+                                            pad_value=pad_value,
+                                            unk_value=unk_value,
+                                            max_len=args.max_len, update=args.update)
+
+    else:
+        data = preprocess_data.load_preprocessed_data(args.load)
+        vocabularies = {key: value for key, value in data.items() if key.endswith("_vocab")}
+        preprocessed_data = \
+            preprocess_data.preprocess_data(file_path=args.input_file, columns=args.columns, vocabularies=vocabularies,
+                                            tokenizer=tokenizer, pre_trained_model=pre_trained_model,
+                                            pad_value=pad_value,
+                                            unk_value=unk_value,
+                                            max_len=args.max_len, update=args.update)
 
     if args.save:
         directory, filename = os.path.split(args.input_file)
-        output_file = f"preprocessed_{filename}.pt"
+        output_file = f"preprocessed_{filename}(v.1.2.0).pt"
         output_file = os.path.join(directory, output_file)
-
-        preprocess_data.save_preprocessed_data(form_vocab, upos_vocab, deprel_vocab, 
-                                               forms, upos, heads, deprels, output_file)
+        preprocess_data.save_preprocessed_data(preprocessed_data, output_file)
 
     if args.display:
-        preprocess_data.display_preprocessed_data(form_vocab, upos_vocab, deprel_vocab, forms, upos, heads, deprels)
+        preprocess_data.display_preprocessed_data(preprocessed_data)
 
 
 def handle_train(args):
     """Handles training mode"""
+    tokenizer = pre_trained_model = None
+    pad_value = cf.PAD_TOKEN_VAL
+    unk_value = cf.UNK_TOKEN_VAL
+    if args.encoder_type == "almanach/camembert-base":
+        tokenizer = AutoTokenizer.from_pretrained(args.encoder_type)
+        pre_trained_model = AutoModel.from_pretrained(args.encoder_type)
+        pre_trained_model = pre_trained_model.to(device)
+
+        pad_value = tokenizer.pad_token_id
+        unk_value = tokenizer.unk_token_id
 
     if args.ltrain:
-        form_vocab_train, upos_vocab_train, deprel_vocab_train, forms_train, upos_train, heads_train, deprels_train \
-            = preprocess_data.load_preprocessed_data(args.ltrain)
+        train_data = preprocess_data.load_preprocessed_data(args.ltrain)
     else:
-        form_vocab_train, upos_vocab_train, deprel_vocab_train, forms_train, upos_train, heads_train, deprels_train \
-            = preprocess_data.preprocess_data(file_path=args.ftrain)
+        train_data = preprocess_data.preprocess_data(file_path=args.ftrain,
+                                                     tokenizer=tokenizer, pre_trained_model=pre_trained_model,
+                                                     columns=['head', 'deprel'] + args.embeddings,
+                                                     pad_value=pad_value,
+                                                     unk_value=unk_value,
+                                                     max_len=50, update=True)
+
+    vocabularies = {key: value for key, value in train_data.items() if key.endswith("_vocab")}
 
     if args.ldev:
-        form_vocab_dev, upos_vocab_dev, deprel_vocab_dev, forms_dev, upos_dev, heads_dev, deprels_dev \
-            = preprocess_data.load_preprocessed_data(args.ldev)
+        dev_data = preprocess_data.load_preprocessed_data(args.ldev)
     else:
-        form_vocab_dev, upos_vocab_dev, deprel_vocab_dev, forms_dev, upos_dev, heads_dev, deprels_dev \
-            = preprocess_data.preprocess_data(file_path=args.fdev, form_vocab=form_vocab_train, upos_vocab=upos_vocab_train, update=False)
+        dev_data = preprocess_data.preprocess_data(file_path=args.fdev, vocabularies=vocabularies,
+                                                   tokenizer=tokenizer, pre_trained_model=pre_trained_model,
+                                                   columns=['head', 'deprel'] + args.embeddings,
+                                                   pad_value=pad_value,
+                                                   unk_value=unk_value,
+                                                   max_len=50, update=False)
 
-    SemanticParser = biaffine_parser.biaffine_parser(V_w=len(form_vocab_train), V_t=len(upos_vocab_train),
-                                                     V_l=len(deprel_vocab_train), d_w=args.d_w, d_t=args.d_t,
-                                                     d_h=args.d_h, d_arc=args.d_arc, d_rel=args.d_rel,
-                                                     rnn_model=args.rnn_type, rnn_layers=args.rnn_layers,
-                                                     bidirectional=args.bidirectional, dropout_rate=args.dropout_rate)
+    deprel_vocab_train = train_data['deprel_vocab']
+
+    embeddings = {}
+    if args.embeddings and args.embeddings_dim:
+        assert len(args.embeddings) == len(args.embeddings_dim)
+        for emb, emb_dim in zip(args.embeddings, args.embeddings_dim):
+            num_emb = len(train_data[f"{emb}_vocab"])
+            embeddings[f"{emb}_embeddings"] = Embedding(num_emb=num_emb, emb_dim=emb_dim)
+
+    if pre_trained_model and tokenizer:
+        encoder = TransformerEncoder(tokenizer=tokenizer, pre_trained_model=pre_trained_model, embeddings=embeddings,
+                                     unfreeze=args.unfreeze)
+    else:
+        encoder = RecurrentEncoder(embeddings=embeddings, hidden_size=args.d_h,
+                                   rnn_type=args.encoder_type, num_layers=args.rnn_layers,
+                                   bidirectional=args.bidirectional, dropout=args.dropout_rate)
+
+    SemanticParser = biaffine_parser.biaffine_parser(encoder=encoder, embeddings=embeddings,
+                                                     num_deprels=len(deprel_vocab_train),
+                                                     d_arc=args.d_arc, d_rel=args.d_rel,
+                                                     dropout_rate=args.dropout_rate)
+    print(SemanticParser)
 
     optimizer = torch.optim.Adam(SemanticParser.parameters(), lr=args.lr)
     loss_function = nn.CrossEntropyLoss()
+    trainer = train_gbparser.Trainer(SemanticParser, optimizer, loss_function, args.batch_size, args.patience)
 
-    trainer = train_gbparser.Trainer(SemanticParser, optimizer, loss_function, args.batch_size)
-    history = trainer.train(forms_train, upos_train, heads_train, deprels_train,
-                            forms_dev, upos_dev, heads_dev, deprels_dev, args.n_epochs)
+    start_time = time.time()
+    history = trainer.train(train_data, dev_data, args.n_epochs)
+    end_time = time.time()
+    print(f"Training time {end_time - start_time}")
 
-    if args.save and args.output is not None:
-        tools.save_model(args.output, model=SemanticParser, optimizer=optimizer, criterion=loss_function,
-                         trained_forms=form_vocab_train, trained_upos=upos_vocab_train, trained_deprels=deprel_vocab_train,
+    if args.save:
+        tools.save_model(args.save, model=SemanticParser, optimizer=optimizer, criterion=loss_function,
+                         trained_vocabularies=vocabularies,
                          n_epochs=args.n_epochs, batch_size=args.batch_size, history=history)
 
 
 def handle_predict(args):
     print(f"Loading model from {args.model}")
-    model, optimizer, criterion, trained_forms, trained_upos, trained_deprels = \
+    model, optimizer, criterion, trained_vocabularies, n_epochs, batch_size, history = \
         tools.load_model(trained_model_path=args.model, device=device)
 
     predict_gbparser.predict(model=model, input_file_path=args.input_file, output_file_path=args.output_file,
-                             trained_forms=trained_forms, trained_upos=trained_upos, trained_deprels=trained_deprels,
+                             trained_vocabularies=trained_vocabularies,
                              display=args.display, device=device)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Graph-based biaffine semantic parser of French")
-
-    subparsers = parser.add_subparsers(dest="mode", required=True, help="Select mode: preprocess | train | predict")
     parser.add_argument('--disable_cuda', action='store_true', help='disable CUDA')
 
-    # --- Preprocessing Mode ---
-    preprocess_parser = subparsers.add_parser("preprocess", help="Preprocess data")
+    mode_parsers = parser.add_subparsers(dest="mode", required=True, help="Select mode: preprocess | train | predict")
+
+    # --- Preprocess Mode ---
+    preprocess_parser = mode_parsers.add_parser("preprocess", help="Preprocess data")
     preprocess_parser.add_argument("input_file", type=str, help="path to input file")
-    preprocess_parser.add_argument("--load", '-l', type=str, help="path to preprocessed file")
-    preprocess_parser.add_argument('--update', '-u', action='store_true',
-                                   help='update vocabulary during preprocessing')
+    preprocess_parser.add_argument('--columns', '-c', type=list_of_strings, default=['form', 'upos', 'head', 'deprel'],
+                                   help='column.s to be extracted (default = form, upos, head, deprel)')
+    preprocess_parser.add_argument('--update', '-u', action='store_true', help='update vocabulary during preprocessing')
+    preprocess_parser.add_argument('--transformer', choices=[None, 'almanach/camembert-base'], default=None,
+                                   help='name of pre_trained transformer to be used (default=None)')
     preprocess_parser.add_argument('--max_len', '-m', type=int, default=50, help='maximum sequence length (default=50)')
     preprocess_parser.add_argument('--save', '-s', action='store_true', help='save preprocessed data')
+    preprocess_parser.add_argument('--load', '-l', type=str, help='path to pre-processed file')
     preprocess_parser.add_argument('--display', '-d', action='store_true', help='display preprocessed data')
+
     preprocess_parser.set_defaults(func=handle_preprocess)
 
     # --- Train Mode ---
-    train_parser = subparsers.add_parser("train", help="Train model")
+    train_parser = mode_parsers.add_parser("train", help="Train model")
 
     train_parser.add_argument('--ftrain', type=str, default=cf.SEQUOIA_SIMPLE_TRAIN,
                               help="path to train corpus")
@@ -111,37 +168,53 @@ if __name__ == '__main__':
     train_parser.add_argument('--ltrain', type=str, help="path to preprocessed train file")
     train_parser.add_argument('--ldev', type=str, help="path to preprocessed dev file")
 
-    train_parser.add_argument('--d_w', type=int, default=100, help="dimension of form embeddings (default=100)")
-    train_parser.add_argument('--d_t', type=int, default=100, help="dimension of upos embeddings (default=100)")
-    train_parser.add_argument('--d_h', type=int, default=200, help="dimension of recurrent state (default=200)")
     train_parser.add_argument('--d_arc', type=int, default=400, help="dimension of head/dependent vector (default=400)")
     train_parser.add_argument('--d_rel', type=int, default=100, help="dimension of deprel vector (default=100)")
-    train_parser.add_argument('--rnn_type', '-t', choices=['lstm', 'gru'], default='lstm',
-                              help="type of rnn (default=lstm)")
-    train_parser.add_argument('--rnn_layers', type=int, default=3, help="number of rnn's layer (default=3)")
-    train_parser.add_argument('--bidirectional', action='store_true', help='enable bidirectional')
+
+    encoder_subparser = train_parser.add_subparsers(dest="encoder_type", required=True,
+                                                    help="encoder type: lstm | gru | almanach/camembert-base")
+
+    # --- RNN parser ---
+    rnn_parser = argparse.ArgumentParser(add_help=False)
+    rnn_parser.add_argument('--embeddings', '-e', type=list_of_strings, default=["form", "upos"],
+                            help='supplementary embeddings (default = form, upos)')
+    rnn_parser.add_argument('--embeddings_dim', '-ed', type=list_of_int, default=[100, 100],
+                            help='dimensions of supplementary embeddings (default = 100, 100)')
+    rnn_parser.add_argument('--d_h', type=int, default=200, help="dimension of recurrent state (default=200)")
+    rnn_parser.add_argument('--rnn_layers', type=int, default=3, help="number of rnn's layer (default=3)")
+    rnn_parser.add_argument('--bidirectional', action='store_true', help='enable bidirectional')
+
+    # --- LSTM parser ---
+    lstm_parser = encoder_subparser.add_parser('lstm', help="lstm encoder", parents=[rnn_parser])
+
+    # --- GRU parser ---
+    gru_parser = encoder_subparser.add_parser('gru', help="gru encoder", parents=[rnn_parser])
+
+    # --- CamemBERT parser ---
+    camembert_parser = encoder_subparser.add_parser('almanach/camembert-base', help="camembert encoder")
+    camembert_parser.add_argument('--embeddings', '-e', type=list_of_strings, default=[],
+                                  help='supplementary embeddings')
+    camembert_parser.add_argument('--embeddings_dim', '-ed', type=list_of_int, default=[],
+                                  help='dimensions of supplementary embeddings')
+    camembert_parser.add_argument('--unfreeze', type=int, default=0, help="last n layers to be fine tuned (default=0)")
+
     train_parser.add_argument('--dropout_rate', '-r', type=float, default=0.33, help="dropout rate (default=0.33)")
-
-    train_parser.add_argument('--n_epochs', type=int, default=10, help="number of training epochs")
+    train_parser.add_argument('--n_epochs', type=int, default=30, help="number of training epochs")
     train_parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
-
     train_parser.add_argument('--lr', type=float, default=0.002, help="learning rate")
-    # TO DO : EARLY STOPPING TO BE IMPLEMENTED
-
-    train_parser.add_argument('--save', '-s', action='store_true', help='save trained model')
-    train_parser.add_argument('--output', '-o', type=str, default=None, help="path to save model")
+    train_parser.add_argument("--patience", "-p", type=int, default=5, help="number of patiences")
+    train_parser.add_argument('--save', '-s', type=str, default=None, help="path to save model")
 
     train_parser.set_defaults(func=handle_train)
 
     # --- Predict Mode ---
-    predict_parser = subparsers.add_parser("predict", help="Predict semantic structures")
+    predict_parser = mode_parsers.add_parser("predict", help="Predict semantic structures")
 
     predict_parser.add_argument('input_file', type=str, help="path to input file")
     predict_parser.add_argument('output_file', type=str, help="path to output file")
     predict_parser.add_argument('model', type=str, help="path to trained model")
     predict_parser.add_argument('--display', '-d', action='store_true', help='display the predictions')
-    # predict_parser.add_argument('--trained_forms', type=str, default=None, help="path to trained form vocabulary")
-    # predict_parser.add_argument('--trained_uposs', type=str, default=None, help="path to trained upos vocabulary")
+
     predict_parser.set_defaults(func=handle_predict)
 
     args = parser.parse_args()
