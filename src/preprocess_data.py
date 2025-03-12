@@ -30,24 +30,26 @@ def pad_tensor(seq: list, max_len: int, pad_value: int = cf.PAD_TOKEN_VAL, devic
     return padded_seq
 
 
-def preprocess_data(file_path: str, columns: list = None, vocabularies=None, tokenizer=None,
-                    pre_trained_model=None, update=True, pad_value: int = cf.PAD_TOKEN_VAL,
-                    unk_value: int = cf.UNK_TOKEN_VAL, max_len: int = 50, device=None):
+def preprocess_data(file_path: str, columns: list, vocabularies=None,         
+                    tokenizer=None, pre_trained_model=None, 
+                    update=True, 
+                    pad_value: int = cf.PAD_TOKEN_VAL,
+                    unk_value: int = cf.UNK_TOKEN_VAL, 
+                    max_len: int = 50, 
+                    device=None):
     """
     Preprocess data from CoNLL-U files.
     """
-
-    if vocabularies is None:
-        vocabularies = {}
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    if vocabularies is None:
+        vocabularies = {}
+    
     if columns is None:
-        columns = ['form', 'upos', 'head', 'deprel']
+        columns = []
     else:
-        ud_columns = ['form', 'lemma', 'upos', 'xpos', 'feats', 'head', 'deprel',
-                      'deps', 'misc', 'parseme:mwe', 'frsemcor:noun', 'parseme:ne']
-        assert all(col in ud_columns for col in columns), "Invalid column(s) in input"
+        assert all(col in cf.UD_COLUMNS for col in columns), "Invalid column(s) in input"
 
     for col in columns:
         if col in ['head']:
@@ -64,6 +66,8 @@ def preprocess_data(file_path: str, columns: list = None, vocabularies=None, tok
 
         for tokenList in tqdm(tokenLists, desc="Processed", unit=" sentence(s)"):
             current_values = {f"current_{col}": [] for col in columns if col != 'id'}
+
+            current_sentence = [token['form'] for token in tokenList]
 
             for token in tokenList:
                 for col in columns:
@@ -82,14 +86,14 @@ def preprocess_data(file_path: str, columns: list = None, vocabularies=None, tok
                             vocabularies[col_name].get(token[col], vocabularies[col_name]["UNK_ID"])
                         )
 
-            if len(current_values[next(iter(current_values))]) < max_len:
+            if len(current_sentence) < max_len:
                 for col in columns:
                     extracted_values[f"extracted_{col}"].append(
                         torch.tensor(current_values[f"current_{col}"], dtype=torch.long)
                     )
                 if tokenizer and pre_trained_model:
                     current_contextual_embeddings = compute_contextual_embeddings(
-                        sentence=[token['form'] for token in tokenList], tokenizer=tokenizer,
+                        sentence=current_sentence, tokenizer=tokenizer,
                         pretrained_model=pre_trained_model, max_len=max_len, device=device
                     )
 
@@ -110,13 +114,13 @@ def compute_contextual_embeddings(sentence: list, tokenizer, pretrained_model, m
                                   device=None) -> torch.Tensor:
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     sentence = [tokenizer.pad_token] + sentence + [tokenizer.pad_token] * (
             max_len - len(sentence) - 1)  # Pad input the input sentence
 
     tokenized_sentence = tokenizer(sentence, return_tensors="pt", is_split_into_words=True).to(device)
     subword_ids = tokenized_sentence.word_ids()
     subword_ids = subword_ids[1:-1]  # Remove BOS and EOS tokens
+    
 
     with torch.no_grad():
         subword_embeddings = pretrained_model(**tokenized_sentence)['last_hidden_state'][0]
@@ -131,8 +135,8 @@ def compute_contextual_embeddings(sentence: list, tokenizer, pretrained_model, m
     # Compute contextual embedding for each aligned subword
     contextual_embedding = torch.stack([torch.stack(aligned_subword_emb[i]).mean(dim=0)
                                         for i in sorted(aligned_subword_emb.keys())]).to("cpu")
-
-    return contextual_embedding.long()
+   
+    return contextual_embedding
 
 
 def save_preprocessed_data(data, file_path):
