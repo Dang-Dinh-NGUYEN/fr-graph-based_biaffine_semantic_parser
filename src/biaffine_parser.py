@@ -23,7 +23,7 @@ class biaffine_parser(nn.Module):
         self.dropout_rate = dropout_rate
 
         if isinstance(self.encoder, RecurrentEncoder):
-            self.d_h = self.encoder.hidden_size * 2 if self.encoder.bidirectional else 1
+            self.d_h = self.encoder.hidden_size * 2 if self.encoder.bidirectional else self.encoder.hidden_size
         elif isinstance(self.encoder, TransformerEncoder):
             self.d_h = self.encoder.hidden_size + sum(emb.embedding.embedding_dim for emb in self.embeddings.values()) \
                 if bool(self.embeddings) else self.encoder.hidden_size
