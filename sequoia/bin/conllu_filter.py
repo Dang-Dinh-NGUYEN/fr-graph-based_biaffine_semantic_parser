@@ -22,7 +22,7 @@ with open(sys.argv[1], "r", encoding="UTF-8") as f:
 
 with open(sys.argv[2], "r", encoding="UTF=8") as f:    
   in_corpus_dict = {}
-  for sent in conllu.parse_incr(f):
+  for sent in conllu.parse_incr(f, field_parsers={"head": lambda line, i: conllu.parser.parse_nullable_value(line[i])}):
     in_corpus_dict[sent.metadata['sent_id']] = sent
     if sent.metadata.get("global.columns",None):      
       header = sent.metadata["global.columns"] # save header for later
