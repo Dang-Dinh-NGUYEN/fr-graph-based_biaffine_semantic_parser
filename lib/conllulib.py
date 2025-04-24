@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
-from typing import T
+import typing as T
 
 import conllu
 import collections
@@ -134,7 +134,7 @@ class Util(object):
 ########################################################################
 
 class CoNLLUReader(object):
-    _FieldParserType = T.Callable[T.List[str], int, T.Any]
+    _FieldParserType = T.Callable[[T.List[str], int], T.Any]
 
     ###############################
 

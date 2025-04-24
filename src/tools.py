@@ -1,10 +1,14 @@
 import pickle
+import sys
+
 import torch
 from src.biaffine_parser import biaffine_parser
 from torch.utils.data import Dataset
 
-torch.serialization.add_safe_globals([biaffine_parser])
 
+# torch.serialization.add_safe_globals([biaffine_parser])
+
+# --- Customized Arguments Parser ---
 
 def list_of_strings(arg):
     if "None" in arg or len(arg) == 0:
@@ -14,6 +18,11 @@ def list_of_strings(arg):
 
 def list_of_int(arg):
     return list(map(int, arg.split(',')))
+
+
+def convert_list_to_string(lst):
+    # Convert each element in the list to a string
+    return '|'.join(str(x) if x != '' else '_' for x in lst)
 
 
 # --- Customized Dataset ---
@@ -68,11 +77,12 @@ def dynamic_collate_fn(batch):
 
 # --- Save/Load models ---
 
-def save_model(file_path: str, model, optimizer, criterion, trained_vocabularies, n_epochs, batch_size, history):
+def save_model(file_path: str, model, optimizer, arc_loss_function, label_loss_function, trained_vocabularies, n_epochs, batch_size, history):
     parameters = {
         'model': model,
         'optimizer': optimizer,
-        'criterion': criterion,
+        'arc_loss_function': arc_loss_function,
+        'label_loss_function': label_loss_function,
         'trained_vocabularies': trained_vocabularies,
         'n_epochs': n_epochs,
         'batch_size': batch_size,
@@ -80,7 +90,7 @@ def save_model(file_path: str, model, optimizer, criterion, trained_vocabularies
     }
     with open(file_path, 'wb') as f:
         pickle.dump(parameters, f)
-    print(f"Model saved to {file_path}")
+    print(f"Model saved to {file_path}", file=sys.stderr)
 
 
 def load_model(trained_model_path: str, device=None):
@@ -94,13 +104,57 @@ def load_model(trained_model_path: str, device=None):
     model.to(device)  # Move to the specified device
 
     optimizer = parameters['optimizer']
-    criterion = parameters['criterion']
+    arc_loss_function = parameters['arc_loss_function']
+    label_loss_function = parameters['label_loss_function']
     trained_vocabularies = parameters['trained_vocabularies']
     n_epochs = parameters['n_epochs']
     batch_size = parameters['batch_size']
     history = parameters['history']
 
-    print(f"Loaded model from {trained_model_path} on {device}")
-    return model, optimizer, criterion, trained_vocabularies, n_epochs, batch_size, history
+    print(f"Loaded model from {trained_model_path} on {device}", file=sys.stderr)
+    return model, optimizer, arc_loss_function, label_loss_function, trained_vocabularies, n_epochs, batch_size, history
 
+
+# --- Multi-hot Encoding ---
+def multi_hot_encode_torch(indices, num_classes):
+    """Creates a multi-hot vector from a list of indices (e.g., [0, 1]) or a single int."""
+    multi_hot = torch.zeros(num_classes, dtype=torch.long)
+
+    # Make sure indices is always a list
+    if isinstance(indices, int):
+        indices = [indices]
+    elif not isinstance(indices, list):
+        indices = list(indices)  # for tuples or tensors
+
+    for idx in indices:
+        if 0 <= idx < num_classes:
+            multi_hot[int(idx)] = 1
+
+    return multi_hot
+
+
+# --- Multi-label Encoding ---
+def multi_label_encode_torch(indices, num_classes, values):
+    """
+    Creates a multi-label vector from indices and associated values.
+    Each index gets the corresponding value in the output tensor.
+    """
+    multi_label = torch.zeros(num_classes, dtype=torch.long)
+
+    # Ensure indices and values are lists (or at least iterable)
+    if isinstance(indices, int):
+        indices = [indices]
+    elif not isinstance(indices, list):
+        indices = list(indices)
+
+    if isinstance(values, int):
+        values = [values]
+    elif not isinstance(values, list):
+        values = list(values)
+
+    for idx, value in zip(indices, values):
+        if 0 <= idx < num_classes:
+            multi_label[int(idx)] = value
+
+    return multi_label
 # TO DO : PLOT TRAINING CURVES
