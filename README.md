@@ -31,22 +31,26 @@ Before using this semantic parser, make sure that all necessary libraries and de
 pip install -r requirements.txt
 ````
 
-## Usage :
+## Usage
 
-### Data preprocessing
+---
+### Syntactic parsing
+
+---
+### Prepare data
 
 To prepare data from a given corpus, `./sequoia/sequoia-ud.parseme.frsemcor.simple.train` for example, and save
 the output, run the following cell :
 
 ````shell
-python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.train -u -s
+python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.train -u -s=./sequoia/preprocessed_sequoia-ud.parseme.frsemcor.simple.train.pt
 ````
 
 Data can also be preprocessed with existing vocabularies. The following shell performs the preprocessing on 
 `./sequoia/sequoia-ud.parseme.frsemcor.simple.dev` with vocabularies extracted from the corpus `.train` : 
 
 ````shell
-python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.dev -l ./sequoia/preprocessed_sequoia-ud.parseme.frsemcor.simple.train.pt -s
+python ./run.py preprocess ./sequoia/sequoia-ud.parseme.frsemcor.simple.dev -l ./sequoia/preprocessed_sequoia-ud.parseme.frsemcor.simple.train.pt -s=./sequoia/preprocessed_sequoia-ud.parseme.frsemcor.simple.dev.pt
 ````
 
 Other arguments are available as presented below :
@@ -67,7 +71,7 @@ options:
   --max_len, -m MAX_LEN
                         maximum sequence length (default=50)
   --save, -s            save preprocessed data
-  --load, -l LOAD       path to pre-processed file
+  --load, -l LOAD       path to preprocessed file
   --display, -d         display preprocessed data
 ````
 
@@ -145,21 +149,21 @@ options:
 ````
 
 **Note: Our a transformer-based parser was not designed to fine-tune any pre-trained transformer. Therefore, selecting --unfreeze has no effects!**
+
 ### Predict
 To predict a corpus using a trained model, run the following command :
 
 ````shell
-python ./run.py predict sequoia/sequoia-ud.parseme.frsemcor.simple.test models/predictions/sequoia-ud.parseme.frsemcor.simple.test.pred.conllu ./models/sample_model.pkl  
+python ./run.py predict sequoia/sequoia-ud.parseme.frsemcor.simple.test ./models/sample_model.pkl  > models/predictions/sequoia-ud.parseme.frsemcor.simple.test.pred.conllu
 ````
 
 Available arguments are showed below:
 
 ````
-usage: run.py predict [-h] [--display] input_file output_file model
+usage: run.py predict [-h] [--display] input_file model
 
 positional arguments:
   input_file     path to input file
-  output_file    path to output file
   model          path to trained model
 
 options:
@@ -174,10 +178,46 @@ Evaluate the predicted output with LAS/UAS :
 python lib/accuracy.py --pred models/predictions/sequoia-ud.parseme.frsemcor.simple.test.pred.conllu --gold sequoia/sequoia-ud.parseme.frsemcor.simple.test --tagcolumn deprel 
 ````
 
+---
+### Semantic parsing
+
+---
+
+To use the parser for semantic parsing, simply add the ```--semantic``` argument before specifying the mode:
+
+```
+usage: run.py [-h] [--disable_cuda] [--semantic] {preprocess,train,predict} ...
+
+Graph-based biaffine parser of French
+
+positional arguments:
+  {preprocess,train,predict}
+                        Select mode: preprocess | train | predict
+    preprocess          Preprocess data
+    train               Train model
+    predict             Predict semantic structures
+
+options:
+  -h, --help            show this help message and exit
+  --disable_cuda        disable CUDA
+  --semantic            enable semantic parser (default = syntactic)
+```
+
+To evaluate semantic prediction, launch the following command:
+
+````shell
+python lib/accuracy.py --pred models/predictions/sequoia-ud.parseme.frsemcor.simple.test.pred.conllu --gold sequoia/sequoia-ud.parseme.frsemcor.simple.test --tagcolumn deps 
+````
+
+**Note: Evaluation is performed only on the DEPS column. Make sure this column is correctly filled before running the evaluation.**
+
+---
+
 ## Releases
 - version 1.0.0 : Graph-based semantic parser using simple GRU and dynamic words dropout with similar configurations to which proposed by [^biaffine]. The model predicts head-governor dependencies only.
 - version 1.1.0 : This graph-based semantic parser utilizes bidirectional LSTM/GRU layers with a word dropout rate of 0.33, maintaining configurations similar to the previous version. It has been extended to predict labeled dependencies for well-formed trees.
 - version 1.2.0 : Pre-trained transformer is incorporate into our parser for prediction of dependency structures of well-formed trees.
+- version 2.0.0 : Complete semantic parser and evaluation on DEPS column.
 
 ## Results
 - version 1.0.0 achieved around 85% for UAS accuracy on the test corpus.
@@ -190,10 +230,10 @@ python lib/accuracy.py --pred models/predictions/sequoia-ud.parseme.frsemcor.sim
 - [X] Understanding the deep syntax structure of the Sequoia corpus, making it UD-compatible
 - [X] Developing a biaffine classifier able to predict labeled syntactic trees
   - [X] Use a pre-trained transformer encoder instead of an RNN
-- [ ] Adapting the classifier to predict generic graphs instead of well-formed trees
-- [ ] Hyper-parameter optimisation of the system on the development corpus
-- [ ] Evaluation on the test portion of the deep syntax annotation of the Sequoia corpus
-  - [ ] In particular, implementing a script to evaluate the predictions
+- [X] Adapting the classifier to predict generic graphs instead of well-formed trees
+- [X] Hyper-parameter optimisation of the system on the development corpus
+- [X] Evaluation on the test portion of the deep syntax annotation of the Sequoia corpus
+  - [X] In particular, implementing a script to evaluate the predictions
 
 ## References
 [^biaffine]: Dozat et al. Stanford’s Graph-based Neural Dependency Parser at the CoNLL 2017 Shared Task. CoNLL 2017 Shared Task: Multilingual Parsing from Raw Text to Universal Dependencies, pages 20–30, Vancouver, Canada, August 3-4, 2017. 

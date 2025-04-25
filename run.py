@@ -149,7 +149,7 @@ def handle_predict(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Graph-based biaffine parser of French")
     parser.add_argument('--disable_cuda', action='store_true', help='disable CUDA')
-    parser.add_argument('--semantic', action='store_true', help='enable semantic parser (default = syntactic')
+    parser.add_argument('--semantic', action='store_true', help='enable semantic parser (default = syntactic)')
 
     mode_parsers = parser.add_subparsers(dest="mode", required=True, help="Select mode: preprocess | train | predict")
 
@@ -163,7 +163,7 @@ if __name__ == '__main__':
                                    help='name of pre_trained transformer to be used (default=None)')
     preprocess_parser.add_argument('--max_len', '-m', type=int, default=50, help='maximum sequence length (default=50)')
     preprocess_parser.add_argument('--save', '-s', action='store_true', help='save preprocessed data')
-    preprocess_parser.add_argument('--load', '-l', type=str, help='path to pre-processed file')
+    preprocess_parser.add_argument('--load', '-l', type=str, help='path to preprocessed file')
     preprocess_parser.add_argument('--display', '-d', action='store_true', help='display preprocessed data')
 
     preprocess_parser.set_defaults(func=handle_preprocess)
