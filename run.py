@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import time
 import torch
 from torch import nn
@@ -13,7 +14,7 @@ from src import config as cf
 
 def handle_preprocess(args):
     """Handles data preprocessing mode"""
-    print(f"Preprocessing file : {args.input_file}")
+    print(f"Preprocessing file : {args.input_file}", file=sys.stderr)
 
     tokenizer = pre_trained_model = None
     pad_value = cf.PAD_TOKEN_VAL
@@ -47,7 +48,7 @@ def handle_preprocess(args):
 
     if args.save:
         directory, filename = os.path.split(args.input_file)
-        output_file = f"preprocessed_{filename}(v.1.2.0).pt"
+        output_file = f"preprocessed_{filename}.pt"
         output_file = os.path.join(directory, output_file)
         preprocess_data.save_preprocessed_data(preprocessed_data, output_file)
 
@@ -73,7 +74,7 @@ def handle_train(args):
     else:
         train_data = preprocess_data.preprocess_data(file_path=args.ftrain,
                                                      tokenizer=tokenizer, pre_trained_model=pre_trained_model,
-                                                     columns=['head', 'deprel'] + args.embeddings,
+                                                     columns=['deps'] + args.embeddings,
                                                      pad_value=pad_value,
                                                      unk_value=unk_value,
                                                      max_len=50, update=True)
@@ -85,7 +86,7 @@ def handle_train(args):
     else:
         dev_data = preprocess_data.preprocess_data(file_path=args.fdev, vocabularies=vocabularies,
                                                    tokenizer=tokenizer, pre_trained_model=pre_trained_model,
-                                                   columns=['head', 'deprel'] + args.embeddings,
+                                                   columns=['deps'] + args.embeddings,
                                                    pad_value=pad_value,
                                                    unk_value=unk_value,
                                                    max_len=50, update=False)
@@ -107,54 +108,62 @@ def handle_train(args):
                                    rnn_type=args.encoder_type, num_layers=args.rnn_layers,
                                    bidirectional=args.bidirectional, dropout=args.dropout_rate)
 
-    SemanticParser = biaffine_parser.biaffine_parser(encoder=encoder, embeddings=embeddings,
-                                                     num_deprels=len(deprel_vocab_train),
-                                                     d_arc=args.d_arc, d_rel=args.d_rel,
-                                                     dropout_rate=args.dropout_rate)
-    print(SemanticParser)
+    DependencyParser = biaffine_parser.biaffine_parser(encoder=encoder, embeddings=embeddings,
+                                                       num_deprels=len(deprel_vocab_train),
+                                                       d_arc=args.d_arc, d_rel=args.d_rel,
+                                                       dropout_rate=args.dropout_rate)
+    print(DependencyParser, file=sys.stderr)
 
-    optimizer = torch.optim.Adam(SemanticParser.parameters(), lr=args.lr)
-    loss_function = nn.CrossEntropyLoss()
-    trainer = train_gbparser.Trainer(SemanticParser, optimizer, loss_function, args.batch_size, args.patience)
+    optimizer = torch.optim.Adam(DependencyParser.parameters(), lr=args.lr)
+
+    if args.semantic:
+        arc_loss_function = nn.BCEWithLogitsLoss()
+    else:
+        arc_loss_function = nn.CrossEntropyLoss()
+    label_loss_function = nn.CrossEntropyLoss()
+
+    trainer = train_gbparser.Trainer(DependencyParser, optimizer, arc_loss_function, label_loss_function, args.batch_size, args.patience)
 
     start_time = time.time()
     history = trainer.train(train_data, dev_data, args.n_epochs)
     end_time = time.time()
-    print(f"Training time {end_time - start_time}")
+    print(f"Training time {end_time - start_time}", file=sys.stderr)
 
     if args.save:
-        tools.save_model(args.save, model=SemanticParser, optimizer=optimizer, criterion=loss_function,
+        tools.save_model(args.save, model=DependencyParser, optimizer=optimizer,
+                         arc_loss_function=arc_loss_function, label_loss_function=label_loss_function,
                          trained_vocabularies=vocabularies,
                          n_epochs=args.n_epochs, batch_size=args.batch_size, history=history)
 
 
 def handle_predict(args):
-    print(f"Loading model from {args.model}")
-    model, optimizer, criterion, trained_vocabularies, n_epochs, batch_size, history = \
+    print(f"Loading model from {args.model}", file=sys.stderr)
+    model, optimizer, arc_loss_function, label_loss_function, trained_vocabularies, n_epochs, batch_size, history = \
         tools.load_model(trained_model_path=args.model, device=device)
 
-    predict_gbparser.predict(model=model, input_file_path=args.input_file, output_file_path=args.output_file,
-                             trained_vocabularies=trained_vocabularies,
+    predict_gbparser.predict(model=model, input_file_path=args.input_file,
+                             trained_vocabularies=trained_vocabularies, semantic_prediction=args.semantic,
                              display=args.display, device=device)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Graph-based biaffine semantic parser of French")
+    parser = argparse.ArgumentParser(description="Graph-based biaffine parser of French")
     parser.add_argument('--disable_cuda', action='store_true', help='disable CUDA')
+    parser.add_argument('--semantic', action='store_true', help='enable semantic parser (default = syntactic)')
 
     mode_parsers = parser.add_subparsers(dest="mode", required=True, help="Select mode: preprocess | train | predict")
 
     # --- Preprocess Mode ---
     preprocess_parser = mode_parsers.add_parser("preprocess", help="Preprocess data")
     preprocess_parser.add_argument("input_file", type=str, help="path to input file")
-    preprocess_parser.add_argument('--columns', '-c', type=list_of_strings, default=['form', 'upos', 'head', 'deprel'],
+    preprocess_parser.add_argument('--columns', '-c', type=list_of_strings, default=['form', 'upos', 'deps'],
                                    help='column.s to be extracted (default = form, upos, head, deprel)')
     preprocess_parser.add_argument('--update', '-u', action='store_true', help='update vocabulary during preprocessing')
     preprocess_parser.add_argument('--transformer', choices=[None, 'almanach/camembert-base'], default=None,
                                    help='name of pre_trained transformer to be used (default=None)')
     preprocess_parser.add_argument('--max_len', '-m', type=int, default=50, help='maximum sequence length (default=50)')
     preprocess_parser.add_argument('--save', '-s', action='store_true', help='save preprocessed data')
-    preprocess_parser.add_argument('--load', '-l', type=str, help='path to pre-processed file')
+    preprocess_parser.add_argument('--load', '-l', type=str, help='path to preprocessed file')
     preprocess_parser.add_argument('--display', '-d', action='store_true', help='display preprocessed data')
 
     preprocess_parser.set_defaults(func=handle_preprocess)
@@ -211,7 +220,7 @@ if __name__ == '__main__':
     predict_parser = mode_parsers.add_parser("predict", help="Predict semantic structures")
 
     predict_parser.add_argument('input_file', type=str, help="path to input file")
-    predict_parser.add_argument('output_file', type=str, help="path to output file")
+    # predict_parser.add_argument('output_file', type=str, help="path to output file")
     predict_parser.add_argument('model', type=str, help="path to trained model")
     predict_parser.add_argument('--display', '-d', action='store_true', help='display the predictions')
 
@@ -224,6 +233,6 @@ if __name__ == '__main__':
     else:
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    print(f"Using {device}")
+    print(f"Using {device}", file=sys.stderr)
 
     args.func(args)

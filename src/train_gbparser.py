@@ -10,10 +10,11 @@ from termcolor import colored
 class Trainer:
     """Encapsulates training and evaluation logic with Early Stopping."""
 
-    def __init__(self, model, optimizer, criterion, batch_size, patience=5, device=None):
+    def __init__(self, model, optimizer, arc_loss_function, label_loss_function, batch_size, patience=5, device=None):
         self.model = model
         self.optimizer = optimizer
-        self.criterion = criterion
+        self.arc_loss_function = arc_loss_function
+        self.label_loss_function = label_loss_function
         self.batch_size = batch_size
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
@@ -115,31 +116,41 @@ class Trainer:
         return avg_loss, avg_arc_loss, avg_rel_loss
 
     def _compute_arc_loss(self, S_arcs, heads):
+        # print(S_arcs.shape)
+        # print(heads.shape)
         heads = heads.to(self.device)
+
         batch_size, seq_length, _ = S_arcs.shape
         S_arcs = S_arcs.view(-1, seq_length)
-        heads = heads.view(-1)
-        mask = heads != self.model.encoder.pad_token_id
+        heads = heads.view(-1, seq_length)
 
-        valid_arcs = S_arcs[mask]
-        valid_heads = heads[mask]
-
-        return self.criterion(valid_arcs, valid_heads)
+        # mask = heads != self.model.encoder.pad_token_id
+        mask = heads.sum(dim=-1) != 0
+        valid_arcs = S_arcs[mask].float()
+        # print(valid_arcs.shape)
+        valid_heads = heads[mask].float()
+        # print(valid_heads.shape)
+        return self.arc_loss_function(valid_arcs, valid_heads)
 
     def _compute_rel_loss(self, S_rel, heads, deprels):
         heads = heads.to(self.device)
         deprels = deprels.to(self.device)
 
-        heads = heads.unsqueeze(-1).unsqueeze(-1)  # (B, L, 1, 1)
-        heads = heads.expand(-1, -1, -1, S_rel.size(3))  # (B, L, 1, c)
+        heads_mask = heads.unsqueeze(-1)  # (B, L, 1, 1)
+        # heads = heads.expand(-1, -1, -1, S_rel.size(3))  # (B, L, 1, c)
+        # heads_mask = heads.unsqueeze(1)
+        # S_rel_gold = torch.gather(S_rel, 2, heads).squeeze(2)  # (B, L, C)
+        # S_rel_gold = S_rel_gold.view(-1, S_rel_gold.size(-1))  # (B * L, C)
+        S_rel_gold = S_rel * heads_mask
+        # print(S_rel_gold.shape)
+        S_rel_gold = S_rel_gold.sum(dim=2)
+        # deprels = deprels.view(-1)  # (B * L)
 
-        S_rel_gold = torch.gather(S_rel, 2, heads).squeeze(2)  # (B, L, C)
-        S_rel_gold = S_rel_gold.view(-1, S_rel_gold.size(-1))  # (B * L, C)
-        deprels = deprels.view(-1)  # (B * L)
+        heads_mask = (heads != 0)
+        # print(heads_mask.shape)
+        # mask = deprels != self.model.encoder.pad_token_id  # (B, 1, L, 1)
 
-        mask = deprels != self.model.encoder.pad_token_id  # (B, 1, L, 1)
+        valid_hdp = S_rel[heads_mask]
+        valid_deprels = deprels[heads_mask]
 
-        valid_hdp = S_rel_gold[mask]
-        valid_deprels = deprels[mask]
-
-        return self.criterion(valid_hdp, valid_deprels)
+        return self.label_loss_function(valid_hdp, valid_deprels)

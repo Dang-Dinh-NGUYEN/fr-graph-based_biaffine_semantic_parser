@@ -1,6 +1,6 @@
-SEQUOIA_SIMPLE_TRAIN = "sequoia/sequoia-ud.parseme.frsemcor.simple.train"
-SEQUOIA_SIMPLE_TEST = "sequoia/sequoia-ud.parseme.frsemcor.simple.test"
-SEQUOIA_SIMPLE_DEV = "sequoia/sequoia-ud.parseme.frsemcor.simple.dev"
+SEQUOIA_SIMPLE_TRAIN = "sequoia-9.2/sequoia-ud.parseme.frsemcor.simple.train"
+SEQUOIA_SIMPLE_TEST = "sequoia-9.2/sequoia-ud.parseme.frsemcor.simple.test"
+SEQUOIA_SIMPLE_DEV = "sequoia-9.2/sequoia-ud.parseme.frsemcor.simple.dev"
 TINY_CONLLU = "sequoia/tiny.conllu"
 
 PAD_TOKEN = "PAD_ID"
